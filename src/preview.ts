@@ -22,6 +22,14 @@ const usage: UsageSnapshot = {
     utilization: 24.8,
     currency: "USD",
   },
+  limits: [
+    { kind: "session", group: "session", percent: 37, resets_at: null, scope: null, severity: "normal", is_active: true },
+    { kind: "weekly_all", group: "weekly", percent: 12, resets_at: null, scope: null, severity: "normal", is_active: false },
+    { kind: "weekly_scoped", group: "weekly", percent: 8, resets_at: null, scope: { model: { display_name: "Opus" }, surface: null }, severity: "normal", is_active: false },
+    { kind: "weekly_scoped", group: "weekly", percent: 22, resets_at: null, scope: { model: { display_name: "Sonnet" }, surface: null }, severity: "normal", is_active: false },
+    { kind: "weekly_scoped", group: "weekly", percent: 61, resets_at: null, scope: { model: { display_name: "Fable" }, surface: null }, severity: "warning", is_active: false },
+    { kind: "weekly_scoped", group: "weekly", percent: 5, resets_at: null, scope: { model: null, surface: { display_name: "Cloud sessions" } }, severity: "normal", is_active: false },
+  ],
   fetchedAtMs: Date.now(),
 };
 

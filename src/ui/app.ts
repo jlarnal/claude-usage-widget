@@ -2,7 +2,7 @@
 
 import { ago, escapeHtml, fmtPct, fmtUsd, formatCountdown, utilColor } from "../format";
 import { selectedSource, type UiState } from "../state";
-import type { ExtraUsage, Source, StatsHistory, UsageSnapshot, UsageWindow } from "../types";
+import type { ExtraUsage, LimitRow, Source, StatsHistory, UsageSnapshot, UsageWindow } from "../types";
 import { historyChart } from "./chart";
 import { miniBar, ringGauge } from "./gauge";
 
@@ -123,13 +123,38 @@ function renderUsage(u: UsageSnapshot, stats: StatsHistory | null, now: number):
     </div>`;
 
   const models: string[] = [];
-  if (u.sevenDayOpus) models.push(miniBar("Opus", u.sevenDayOpus.utilization));
-  if (u.sevenDaySonnet) models.push(miniBar("Sonnet", u.sevenDaySonnet.utilization));
+  const shown = new Set<string>();
+  if (u.sevenDayOpus) {
+    models.push(miniBar("Opus", u.sevenDayOpus.utilization));
+    shown.add("opus");
+  }
+  if (u.sevenDaySonnet) {
+    models.push(miniBar("Sonnet", u.sevenDaySonnet.utilization));
+    shown.add("sonnet");
+  }
+  for (const row of scopedLimits(u.limits)) {
+    const label = scopeLabel(row);
+    if (!label || shown.has(label.toLowerCase())) continue;
+    shown.add(label.toLowerCase());
+    models.push(miniBar(escapeHtml(label), row.percent));
+  }
   const modelBlock = models.length
     ? `<div class="models">${models.join("")}</div>`
     : "";
 
   return `${gauges}${modelBlock}${extraUsageBlock(u.extraUsage)}${historyChart(stats)}`;
+}
+
+/** Rows of `limits[]` scoped to a model (e.g. Fable) or a surface (e.g. cloud sessions). */
+function scopedLimits(limits: LimitRow[] | null | undefined): LimitRow[] {
+  if (!limits) return [];
+  return limits.filter((row) => scopeLabel(row) !== null);
+}
+
+/** The server-supplied label for a scoped row, or null for unscoped rows. */
+function scopeLabel(row: LimitRow): string | null {
+  const name = row.scope?.model?.display_name ?? row.scope?.surface?.display_name ?? "";
+  return name.trim() ? name.trim() : null;
 }
 
 function extraUsageBlock(extra: ExtraUsage | null): string {

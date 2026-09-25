@@ -21,7 +21,8 @@ Prefer to build it yourself? See [Build](#build) below.
 
 - **5-hour window** and **weekly window** utilization, as ring gauges with live
   reset countdowns.
-- **Per-model weekly windows** (Opus / Sonnet) as compact bars when present.
+- **Per-model and per-surface weekly windows** (Opus / Sonnet / Fable / cloud
+  sessions, plus any new meter the server adds) as compact bars when present.
 - **Local token history** — a stacked daily chart from `stats-cache.json`.
 - **Source switcher** — pick between your Windows install and any WSL distro, or
   add a custom `.credentials.json` path. One source shown at a time; switch from

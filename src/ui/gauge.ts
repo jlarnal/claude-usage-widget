@@ -43,7 +43,7 @@ export function miniBar(label: string, percent: number): string {
   const color = utilColor(pct);
   return `
   <div class="mini">
-    <span class="mini-label">${label}</span>
+    <span class="mini-label" title="${label}">${label}</span>
     <div class="mini-track"><div class="mini-fill" style="width:${pct}%;background:${color}"></div></div>
     <span class="mini-pct">${fmtPct(pct)}%</span>
   </div>`;

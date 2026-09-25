@@ -13,6 +13,26 @@ export interface ExtraUsage {
   currency: string | null;
 }
 
+export interface LimitScopeLabel {
+  display_name: string;
+}
+
+export interface LimitScope {
+  model: LimitScopeLabel | null;
+  surface: LimitScopeLabel | null;
+}
+
+/** One row of the usage endpoint's `limits[]` array (server-labeled meters). */
+export interface LimitRow {
+  kind: string;
+  group: string;
+  percent: number;
+  resets_at: string | null;
+  scope: LimitScope | null;
+  severity: string | null;
+  is_active: boolean;
+}
+
 export interface UsageSnapshot {
   plan: string;
   subscriptionType: string | null;
@@ -22,6 +42,7 @@ export interface UsageSnapshot {
   sevenDayOpus: UsageWindow | null;
   sevenDaySonnet: UsageWindow | null;
   extraUsage: ExtraUsage | null;
+  limits: LimitRow[] | null;
   fetchedAtMs: number;
 }
 

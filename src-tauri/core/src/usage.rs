@@ -37,6 +37,48 @@ pub struct ExtraUsage {
     pub currency: Option<String>,
 }
 
+/// The display label attached to a scoped limit row (`scope.model` / `scope.surface`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LimitScopeLabel {
+    #[serde(default)]
+    pub display_name: String,
+}
+
+/// What a scoped limit row applies to: a model (e.g. "Fable") or a surface
+/// (e.g. cloud sessions). The server supplies the display label.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LimitScope {
+    #[serde(default)]
+    pub model: Option<LimitScopeLabel>,
+    #[serde(default)]
+    pub surface: Option<LimitScopeLabel>,
+}
+
+/// One row of the endpoint's `limits[]` array. Rows are rendered verbatim so a
+/// new server-side meter (per-model or per-surface) needs no widget release.
+/// Field names are snake_case to match both the API payload and the frontend.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LimitRow {
+    /// Meter kind, e.g. `session`, `weekly_all`, `weekly_scoped`.
+    #[serde(default)]
+    pub kind: String,
+    /// Row group, e.g. `session` or `weekly`.
+    #[serde(default)]
+    pub group: String,
+    /// Percent of the window consumed (0–100).
+    #[serde(default)]
+    pub percent: f64,
+    #[serde(default)]
+    pub resets_at: Option<String>,
+    #[serde(default)]
+    pub scope: Option<LimitScope>,
+    /// Server's reading of the row, e.g. `normal`, `warning`, `critical`.
+    #[serde(default)]
+    pub severity: Option<String>,
+    #[serde(default)]
+    pub is_active: bool,
+}
+
 /// Raw response from the usage endpoint. Unknown/extra fields are ignored.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RawUsage {
@@ -50,6 +92,8 @@ pub struct RawUsage {
     pub seven_day_sonnet: Option<UsageWindow>,
     #[serde(default)]
     pub extra_usage: Option<ExtraUsage>,
+    #[serde(default)]
+    pub limits: Option<Vec<LimitRow>>,
 }
 
 /// What the frontend renders: usage windows plus a friendly plan label.
@@ -65,6 +109,7 @@ pub struct UsageSnapshot {
     pub seven_day_opus: Option<UsageWindow>,
     pub seven_day_sonnet: Option<UsageWindow>,
     pub extra_usage: Option<ExtraUsage>,
+    pub limits: Option<Vec<LimitRow>>,
     pub fetched_at_ms: i64,
 }
 
@@ -164,6 +209,7 @@ pub async fn fetch_usage_snapshot(
         seven_day_opus: raw.seven_day_opus,
         seven_day_sonnet: raw.seven_day_sonnet,
         extra_usage: raw.extra_usage,
+        limits: raw.limits,
         fetched_at_ms: now_ms,
     })
 }
@@ -215,6 +261,45 @@ mod tests {
     fn extra_usage_absent_is_none() {
         let u = parse_usage(r#"{"five_hour":{"utilization":1.0}}"#).unwrap();
         assert!(u.extra_usage.is_none());
+    }
+
+    #[test]
+    fn parses_scoped_limit_rows() {
+        let raw = r#"{
+            "five_hour": {"utilization": 1.0},
+            "limits": [
+                {"kind": "session", "group": "session", "percent": 1.0, "resets_at": null, "severity": "normal", "is_active": true},
+                {"kind": "weekly_scoped", "group": "weekly", "percent": 42.5, "resets_at": "2026-06-14T05:00:00+00:00",
+                 "scope": {"model": {"display_name": "Fable"}}, "severity": "warning", "is_active": false},
+                {"kind": "weekly_scoped", "group": "weekly", "percent": 7.0, "resets_at": null,
+                 "scope": {"surface": {"display_name": "Cloud sessions"}}, "severity": "normal", "is_active": false, "unknown": 1}
+            ]
+        }"#;
+        let u = parse_usage(raw).unwrap();
+        let rows = u.limits.unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(rows[0].scope.is_none());
+        assert!(rows[0].is_active);
+        let fable = &rows[1];
+        assert_eq!(fable.kind, "weekly_scoped");
+        assert_eq!(fable.percent, 42.5);
+        assert_eq!(fable.severity.as_deref(), Some("warning"));
+        assert_eq!(
+            fable.scope.as_ref().unwrap().model.as_ref().unwrap().display_name,
+            "Fable"
+        );
+        let cloud = &rows[2];
+        assert_eq!(
+            cloud.scope.as_ref().unwrap().surface.as_ref().unwrap().display_name,
+            "Cloud sessions"
+        );
+        assert!(cloud.scope.as_ref().unwrap().model.is_none());
+    }
+
+    #[test]
+    fn limits_absent_is_none() {
+        let u = parse_usage(r#"{"five_hour":{"utilization":1.0}}"#).unwrap();
+        assert!(u.limits.is_none());
     }
 
     #[test]
