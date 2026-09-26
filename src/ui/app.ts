@@ -310,7 +310,10 @@ function diagnostics(state: UiState): string {
   }
   return `
       <details class="diag">
-        <summary>Raw usage response</summary>
+        <summary>Diagnostics</summary>
+        <div class="hint">${escapeHtml(state.windowNote || "Window: not resized yet")} · v${escapeHtml(
+          APP_VERSION,
+        )}</div>
         <button class="btn" data-action="copy-raw" ${raw ? "" : "disabled"}>Copy to clipboard</button>
         <textarea class="raw" readonly data-no-drag spellcheck="false">${escapeHtml(
           pretty || "No response yet.",

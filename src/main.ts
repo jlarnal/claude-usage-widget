@@ -199,7 +199,16 @@ function measureCompact(): { w: number; h: number } {
 
 async function applyWindowSize(): Promise<void> {
   const s = state.config.compact ? measureCompact() : SIZE_EXPANDED;
-  await api.setWindowSize(s.w, s.h).catch(() => {});
+  let windowNote: string;
+  try {
+    await api.setWindowSize(s.w, s.h);
+    const got = await api.windowSize();
+    windowNote = `Window: wanted ${s.w}×${s.h}, got ${got.w}×${got.h} (scale ${got.scale})`;
+  } catch (e) {
+    windowNote = `Window resize failed: ${errText(e)}`;
+  }
+  state = { ...state, windowNote };
+  if (state.settingsOpen) render();
 }
 
 async function toggleCompact(): Promise<void> {

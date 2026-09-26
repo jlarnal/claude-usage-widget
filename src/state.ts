@@ -11,6 +11,8 @@ export interface UiState {
   status: Status;
   settingsOpen: boolean;
   lastUpdatedMs: number | null;
+  /** Last window-resize outcome, shown in the diagnostics panel. */
+  windowNote: string;
 }
 
 export function initialState(config: AppConfig): UiState {
@@ -23,6 +25,7 @@ export function initialState(config: AppConfig): UiState {
     status: { kind: "loading" },
     settingsOpen: false,
     lastUpdatedMs: null,
+    windowNote: "",
   };
 }
 

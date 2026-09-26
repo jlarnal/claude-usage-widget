@@ -1,7 +1,7 @@
 // Typed wrappers around the Tauri command + plugin surface.
 
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, PhysicalSize } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { AppConfig, Source, StatsHistory, UsageSnapshot } from "./types";
@@ -38,8 +38,28 @@ export async function setAlwaysOnTop(value: boolean): Promise<void> {
   await getCurrentWindow().setAlwaysOnTop(value);
 }
 
+/** The window's current inner size in CSS pixels plus its scale factor. */
+export async function windowSize(): Promise<{ w: number; h: number; scale: number }> {
+  const win = getCurrentWindow();
+  const scale = await win.scaleFactor();
+  const inner = (await win.innerSize()).toLogical(scale);
+  return { w: Math.round(inner.width), h: Math.round(inner.height), scale };
+}
+
+/**
+ * Resize to `width`×`height` CSS pixels. The size is read back afterwards and,
+ * if the window came out smaller (seen on Windows when the DPI scale is not
+ * yet applied), it is set again in physical pixels.
+ */
 export async function setWindowSize(width: number, height: number): Promise<void> {
-  await getCurrentWindow().setSize(new LogicalSize(width, height));
+  const win = getCurrentWindow();
+  await win.setSize(new LogicalSize(width, height));
+  const got = await windowSize();
+  if (got.w < width || got.h < height) {
+    await win.setSize(
+      new PhysicalSize(Math.round(width * got.scale), Math.round(height * got.scale)),
+    );
+  }
 }
 
 export async function startDragging(): Promise<void> {
