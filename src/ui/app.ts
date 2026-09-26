@@ -38,7 +38,7 @@ function renderCompact(state: UiState): string {
 
   const dimmed = u ? "" : " dimmed";
   return `
-  <div class="widget compact ${style}${dimmed}">
+  <div class="widget compact compact-${style}${dimmed}">
     <button class="iconbtn expand-btn" data-action="toggle-compact" title="Expand">&#x26F6;</button>
     ${content}
   </div>`;
