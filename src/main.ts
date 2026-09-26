@@ -2,7 +2,7 @@ import "./styles.css";
 
 import * as api from "./api";
 import { ago, formatCountdown } from "./format";
-import { compactSize, SIZE_EXPANDED } from "./layout";
+import { compactSize, COMPACT_PAD, SIZE_EXPANDED } from "./layout";
 import { listMeters, meterDisplay, meterInMini } from "./meters";
 import { initialState, selectedSource, type UiState } from "./state";
 import type { AppConfig, CompactStyle, MeterDisplay, Source } from "./types";
@@ -70,10 +70,9 @@ async function refreshUsage(): Promise<void> {
   try {
     const usage = await api.fetchUsage(src.credentialsPath);
     backoffLevel = 0; // recovered — resume normal cadence
-    const before = miniMeterCount();
     setState({ usage, status: { kind: "ok" }, lastUpdatedMs: Date.now() });
-    // New meters can appear with the first fetch; grow the minimized window to fit.
-    if (state.config.compact && miniMeterCount() !== before) await applyWindowSize();
+    // New meters can appear with a fetch; keep the minimized window fitting its content.
+    if (state.config.compact) await applyWindowSize();
   } catch (e) {
     // Any failure backs the poller off so we don't hammer the endpoint.
     backoffLevel = Math.min(backoffLevel + 1, MAX_BACKOFF_LEVEL);
@@ -177,10 +176,29 @@ function miniMeterCount(): number {
   return listMeters(state.usage).filter((m) => meterInMini(state.config, m)).length;
 }
 
+/**
+ * Size the minimized window to its rendered content: bars stack vertically and
+ * rings line up horizontally, so measure the meters in the DOM (plus gaps and
+ * the window chrome) and never go below the estimate from `compactSize`.
+ */
+function measureCompact(): { w: number; h: number } {
+  const style = state.config.compactStyle;
+  const est = compactSize(style, miniMeterCount());
+  const box = root.querySelector<HTMLElement>(".cbars, .crings");
+  if (!box) return est;
+  const items = Array.from(box.children) as HTMLElement[];
+  const gap = parseFloat(getComputedStyle(box).gap) || 0;
+  const gaps = Math.max(0, items.length - 1) * gap;
+  if (style === "rings") {
+    const w = items.reduce((a, el) => a + el.offsetWidth, 0) + gaps + COMPACT_PAD.x;
+    return { w: Math.max(est.w, Math.ceil(w)), h: est.h };
+  }
+  const h = items.reduce((a, el) => a + el.offsetHeight, 0) + gaps + COMPACT_PAD.y + 4;
+  return { w: est.w, h: Math.max(est.h, Math.ceil(h)) };
+}
+
 async function applyWindowSize(): Promise<void> {
-  const s = state.config.compact
-    ? compactSize(state.config.compactStyle, miniMeterCount())
-    : SIZE_EXPANDED;
+  const s = state.config.compact ? measureCompact() : SIZE_EXPANDED;
   await api.setWindowSize(s.w, s.h).catch(() => {});
 }
 

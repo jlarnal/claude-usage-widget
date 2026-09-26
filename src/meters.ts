@@ -8,7 +8,10 @@ export interface Meter {
   /** Stable key used in `config.meters`. */
   id: string;
   title: string;
+  /** The value a gauge draws: percent used for windows, percent left for credits. */
   percent: number;
+  /** Percent used, which drives the colour; equals `percent` except for credits. */
+  colorPercent: number;
   resetsAt: string | null;
   /** Per-model / per-surface weekly window (Opus, Sonnet, Fable, cloud sessions…). */
   scoped: boolean;
@@ -72,6 +75,7 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
       id: "five_hour",
       title: "5-hour",
       percent: u?.fiveHour?.utilization ?? 0,
+      colorPercent: u?.fiveHour?.utilization ?? 0,
       resetsAt: u?.fiveHour?.resets_at ?? null,
       scoped: false,
     },
@@ -79,6 +83,7 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
       id: "seven_day",
       title: "Week",
       percent: u?.sevenDay?.utilization ?? 0,
+      colorPercent: u?.sevenDay?.utilization ?? 0,
       resetsAt: u?.sevenDay?.resets_at ?? null,
       scoped: false,
     },
@@ -90,7 +95,7 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
     const id = title.toLowerCase();
     if (seen.has(id)) return;
     seen.add(id);
-    out.push({ id, title, percent, resetsAt, scoped: true });
+    out.push({ id, title, percent, colorPercent: percent, resetsAt, scoped: true });
   };
   if (u.sevenDayOpus) pushScoped("Opus", u.sevenDayOpus.utilization, u.sevenDayOpus.resets_at);
   if (u.sevenDaySonnet) pushScoped("Sonnet", u.sevenDaySonnet.utilization, u.sevenDaySonnet.resets_at);
@@ -111,10 +116,14 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
     seen.add(id);
     const limit = b.limit_dollars ?? 0;
     const used = b.used_dollars ?? 0;
+    const usedPct = Math.max(0, Math.min(100, b.utilization));
+    // A credit is a fuel gauge: it is drawn as what is left and drains as it
+    // is spent, while its colour follows how much has been used.
     out.push({
       id,
       title,
-      percent: b.utilization,
+      percent: 100 - usedPct,
+      colorPercent: usedPct,
       resetsAt: b.resets_at,
       scoped: true,
       credit: { used, limit, remaining: b.remaining_dollars ?? Math.max(0, limit - used) },

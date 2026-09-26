@@ -30,10 +30,10 @@ function renderCompact(state: UiState): string {
   const content =
     style === "rings"
       ? `<div class="crings">${meters
-          .map((m) => compactRing(escapeHtml(compactLabel(m)), m.percent))
+          .map((m) => compactRing(escapeHtml(compactLabel(m)), m.percent, m.colorPercent))
           .join("")}</div>`
       : `<div class="cbars">${meters
-          .map((m) => compactBar(escapeHtml(compactLabel(m)), m.percent))
+          .map((m) => compactBar(escapeHtml(compactLabel(m)), m.percent, m.colorPercent))
           .join("")}</div>`;
 
   const dimmed = u ? "" : " dimmed";
@@ -44,18 +44,18 @@ function renderCompact(state: UiState): string {
   </div>`;
 }
 
-function compactBar(label: string, pct: number): string {
+function compactBar(label: string, pct: number, colorPct = pct): string {
   const p = Math.max(0, Math.min(100, pct));
   return `
   <div class="cbar">
     <span class="cbar-label" title="${label}">${label}</span>
-    <div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${utilColor(p)}"></div></div>
+    <div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${utilColor(colorPct)}"></div></div>
     <span class="cbar-pct">${fmtPct(p)}%</span>
   </div>`;
 }
 
-function compactRing(label: string, pct: number): string {
-  return `<div class="cring">${ringGauge(pct, { size: 60, stroke: 7 })}<span class="cring-label" title="${label}">${label}</span></div>`;
+function compactRing(label: string, pct: number, colorPct = pct): string {
+  return `<div class="cring">${ringGauge(pct, { size: 60, stroke: 7, colorPercent: colorPct })}<span class="cring-label" title="${label}">${label}</span></div>`;
 }
 
 function renderTopbar(state: UiState): string {
@@ -156,7 +156,9 @@ function creditBar(m: Meter): string {
     <div class="extra-head"><span>${escapeHtml(m.title)}</span><span class="extra-amt" title="${escapeHtml(
       amount,
     )}">${fmtUsd(c.remaining)} left</span></div>
-    <div class="mini-track"><div class="mini-fill" style="width:${pct}%;background:${utilColor(pct)}"></div></div>
+    <div class="mini-track"><div class="mini-fill" style="width:${pct}%;background:${utilColor(
+      m.colorPercent,
+    )}"></div></div>
     <div class="credit-sub">${escapeHtml(amount)} used${
       m.resetsAt ? ` · resets ${escapeHtml(shortDate(m.resetsAt))}` : ""
     }</div>
@@ -188,15 +190,22 @@ function extraUsageBlock(extra: ExtraUsage | null): string {
 
 function gaugeCol(m: Meter, now: number, small: boolean): string {
   const reset = m.resetsAt;
-  const ring = small ? ringGauge(m.percent, { size: 84, stroke: 8 }) : ringGauge(m.percent);
+  const opts = small ? { size: 84, stroke: 8, colorPercent: m.colorPercent } : { colorPercent: m.colorPercent };
+  const ring = ringGauge(m.percent, opts);
+  // Credits read "$198 left · resets Nov 5"; windows keep the live countdown.
+  const sub = m.credit
+    ? `<span class="reset">${fmtUsd(m.credit.remaining)} left${
+        reset ? ` · resets ${escapeHtml(shortDate(reset))}` : ""
+      }</span>`
+    : `<span class="reset"${reset ? ` data-reset="${reset}"` : ""}>${
+        reset ? `resets in ${formatCountdown(reset, now)}` : "no reset"
+      }</span>`;
   return `
     <div class="gcol">
       ${ring}
       <div class="gmeta">
         <span class="gtitle" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</span>
-        <span class="reset"${reset ? ` data-reset="${reset}"` : ""}>${
-          reset ? `resets in ${formatCountdown(reset, now)}` : "no reset"
-        }</span>
+        ${sub}
       </div>
     </div>`;
 }

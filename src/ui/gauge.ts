@@ -6,6 +6,8 @@ interface GaugeOpts {
   size?: number;
   stroke?: number;
   label?: string;
+  /** Percent that drives the colour when it differs from the drawn value (credit gauges). */
+  colorPercent?: number;
 }
 
 /** A circular utilization gauge with a centered percentage. */
@@ -16,7 +18,7 @@ export function ringGauge(percent: number, opts: GaugeOpts = {}): string {
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, percent));
   const offset = c * (1 - pct / 100);
-  const color = utilColor(pct);
+  const color = utilColor(opts.colorPercent ?? pct);
   const cx = size / 2;
   const cy = size / 2;
 
@@ -38,9 +40,9 @@ export function ringGauge(percent: number, opts: GaugeOpts = {}): string {
 }
 
 /** A compact labeled progress bar (used for the per-model weekly windows). */
-export function miniBar(label: string, percent: number): string {
+export function miniBar(label: string, percent: number, colorPercent = percent): string {
   const pct = Math.max(0, Math.min(100, percent));
-  const color = utilColor(pct);
+  const color = utilColor(colorPercent);
   return `
   <div class="mini">
     <span class="mini-label" title="${label}">${label}</span>
