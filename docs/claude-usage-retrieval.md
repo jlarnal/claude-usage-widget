@@ -1,65 +1,53 @@
-# Retrieving Claude subscription consumption: credits, quotas and local stats
+# Retrieving Claude subscription consumption data
 
-A language-agnostic reference for building a "Claude usage" monitor. It
-collects everything this widget learned about where the data lives, how to
-fetch it, what the payloads look like and how to turn them into meters.
-Nothing here depends on Rust, Tauri or TypeScript.
+Where Claude's consumption data (quotas, credits, local token stats) lives,
+how to obtain the raw data, and what the raw data looks like. Nothing here is
+specific to a language, framework or application; how you present the data
+is up to you.
 
 Everything about the usage endpoint is **observed behaviour of an
 undocumented, internal API** (the one Claude Code's `/usage` screen and the
 claude.ai usage page call). Field names, codenames and semantics can change
-without notice. Keep a "raw response" view in your app so you can adapt.
+without notice.
 
 Last verified: September 2026, against Claude Code 2.1.x and a Max plan.
 
 ---
 
-## 1. Data sources at a glance
+## 1. Data sources
 
-| What | Where | Access | Freshness |
-|---|---|---|---|
-| OAuth token, plan tier | `~/.claude/.credentials.json` | read-only file | refreshed by Claude Code |
-| Rolling-window quotas, per-model windows, credit pools, extra usage | `GET https://api.anthropic.com/api/oauth/usage` | HTTPS + bearer token | live |
-| Per-day token counts per model (local) | `~/.claude/projects/**/*.jsonl` transcripts | read-only files | as Claude Code writes |
-| Aggregated token stats (local, lags) | `~/.claude/stats-cache.json` | read-only file | periodic |
-
-```
-.credentials.json ──(read)──▶ your backend ──HTTPS──▶ api.anthropic.com/api/oauth/usage
-                                     │
-projects/**/*.jsonl ───(read)──▶ your backend ──▶ per-day / per-model token history
-stats-cache.json ─────(read)──▶ (fallback)
-```
-
-Keep the token in the backend. Only the derived numbers should reach a UI.
+| Data | Source | Access |
+|---|---|---|
+| OAuth token, subscription type, rate-limit tier | `~/.claude/.credentials.json` | local file, read-only |
+| Rolling-window quotas, per-model windows, credit pools, extra usage | `GET https://api.anthropic.com/api/oauth/usage` | HTTPS, bearer token |
+| Per-message token counts per model | `~/.claude/projects/**/*.jsonl` | local files, read-only |
+| Aggregated token stats (lags behind the transcripts) | `~/.claude/stats-cache.json` | local file, read-only |
 
 ---
 
-## 2. Credentials
+## 2. Credentials file
 
-### 2.1 Locations
+### 2.1 Location
 
 | Platform | Path |
 |---|---|
 | Windows | `%USERPROFILE%\.claude\.credentials.json` |
 | Linux | `$HOME/.claude/.credentials.json` |
 | macOS | `$HOME/.claude/.credentials.json` (Claude Code may also keep the token in the Keychain; check the file first) |
-| WSL distro, seen from Windows | `\\wsl.localhost\<distro>\<home>\.claude\.credentials.json` or the older `\\wsl$\<distro>\...` |
+| WSL distro, seen from Windows | `\\wsl.localhost\<distro>\<home>\.claude\.credentials.json` or the older `\\wsl$\<distro>\<home>\.claude\.credentials.json` |
 
-`~/.claude` is also where `projects/` and `stats-cache.json` live, so
-"the directory containing the credentials file" is the anchor for everything.
+The directory containing the file is also where `projects/` and
+`stats-cache.json` live.
 
-Discovering WSL distros from Windows:
+Finding WSL distros and their home directories from Windows:
 
 - `wsl.exe -l -q` prints one distro name per line. The output is usually
-  **UTF-16LE** (optionally with a BOM) and may contain NUL bytes; detect that
-  (roughly half the bytes are NUL) and decode accordingly, then trim.
-- `wsl.exe -d <distro> -e sh -c 'printf %s "$HOME"'` gives the POSIX home
-  (fall back to `/root`). Reject distro names containing `\`, `/`, `..` or NUL
-  before building a UNC path.
-- Build the UNC path as `<prefix>\<distro>\<home with / turned into \>\.claude\.credentials.json`
-  and test both prefixes; prefer the one that exists.
+  **UTF-16LE**, optionally with a BOM, and may contain NUL bytes.
+- `wsl.exe -d <distro> -e sh -c 'printf %s "$HOME"'` prints the POSIX home
+  (`/root` if it prints nothing).
+- In the UNC path, `/` in the home directory becomes `\`.
 
-### 2.2 File format
+### 2.2 Format
 
 ```json
 {
@@ -77,31 +65,18 @@ Discovering WSL distros from Windows:
 | Field | Meaning |
 |---|---|
 | `accessToken` | Bearer token for the usage endpoint. |
-| `refreshToken` | Present, but **do not use it**. |
-| `expiresAt` | Epoch **milliseconds**. Token is expired when `now_ms >= expiresAt`. Missing means "assume valid". |
+| `refreshToken` | Present, but owned by Claude Code. Do not use it: two clients refreshing the same token log one of them out. |
+| `expiresAt` | Epoch **milliseconds**. The token is expired when `now_ms >= expiresAt`. May be absent. |
+| `scopes` | `user:profile` is required by the usage endpoint. |
 | `subscriptionType` | `max`, `pro`, `team`, `enterprise`, … |
 | `rateLimitTier` | e.g. `default_claude_max_5x`, `default_claude_max_20x`, `claude_pro`. |
 
-Rules that keep you out of trouble:
-
-- Treat the file as **read-only**. Claude Code owns token refresh. If two
-  clients refresh the same refresh token, one of them ends up logged out.
-- If the token is expired or the endpoint answers 401/403, tell the user to
-  run Claude Code once (any command) so it refreshes the token, then retry.
-- Never log or display the token.
-
-### 2.3 Plan label
-
-A friendly plan name can be derived locally (there is no "plan name" field):
-
-1. If `rateLimitTier` contains `max_20x` → "Max 20x"; `max_5x` → "Max 5x";
-   `max` → "Max"; `team` → "Team"; `pro` → "Pro"; `free` → "Free".
-2. Else use `subscriptionType` capitalised (`max` → "Max", `enterprise` → "Enterprise").
-3. Prefix with "Claude ". Fall back to just "Claude".
+Treat the file as read-only. When the token is expired, running Claude Code
+once (any command) refreshes it.
 
 ---
 
-## 3. The usage endpoint
+## 3. Usage endpoint
 
 ### 3.1 Request
 
@@ -109,46 +84,34 @@ A friendly plan name can be derived locally (there is no "plan name" field):
 GET https://api.anthropic.com/api/oauth/usage
 Authorization: Bearer <accessToken>
 anthropic-beta: oauth-2025-04-20
-User-Agent: <your app name>
+User-Agent: <anything>
 ```
 
-- The `anthropic-beta: oauth-2025-04-20` header is required for OAuth tokens.
-- A variant `GET /api/oauth/usage?at_wall=1&skip_spend=1` exists (Claude Code
-  uses it when it hits a limit). Semantics unverified; the plain URL is enough.
-- Use a request timeout (this widget uses 20 s).
+A variant `GET /api/oauth/usage?at_wall=1&skip_spend=1` exists (Claude Code
+uses it after hitting a limit). Its semantics are unverified.
 
-### 3.2 What the request needs and what it costs
+### 3.2 Requirements and cost
 
 | Requirement | Detail |
 |---|---|
-| Authentication | The **OAuth access token** from `.credentials.json` (a subscription login). A Console **API key does not work** here, and the endpoint is meaningless for API-key, Bedrock or Vertex users, who have no plan windows. |
-| Scope | The token must carry the `user:profile` scope (Claude Code's normal login grants `user:inference` and `user:profile`). Claude Code reports plan limits as unavailable when that scope is missing. |
+| Authentication | The **OAuth access token** from `.credentials.json` (a subscription login). A Console **API key does not work**, and the endpoint has no meaning for API-key, Bedrock or Vertex users, who have no plan windows. |
+| Scope | The token must carry `user:profile`; Claude Code's normal login grants it. |
 | Beta header | `anthropic-beta: oauth-2025-04-20`, or the request is rejected. |
-| Price | **None.** It is a metadata read: no model is invoked, so it consumes **no tokens, no plan quota and no credits**, and nothing is billed. Polling every minute for a day did not move any window. |
-| Rate limit | The endpoint itself is rate limited (HTTP 429 with `Retry-After`). That is the only "cost": poll sensibly. |
+| Price | **None.** No model is invoked, so the call consumes **no tokens, no plan quota and no credits**, and nothing is billed. |
+| Rate limit | The endpoint itself is rate limited: HTTP 429, with a `Retry-After` header in seconds when provided. |
 
-Reading the credentials file, the transcripts and `stats-cache.json` is
-local and free.
+Reading the local files costs nothing.
 
-### 3.3 Responses and errors
+### 3.3 Status codes
 
-| Status | Meaning | What to do |
-|---|---|---|
-| 200 | JSON body (see below) | parse; tolerate unknown fields |
-| 401 / 403 | token expired or revoked | show "run Claude Code once", stop polling until refreshed |
-| 429 | rate limited | honour `Retry-After` (seconds) if present, else back off |
-| other 5xx/4xx | transient / unknown | back off, keep the last good snapshot |
+| Status | Meaning |
+|---|---|
+| 200 | JSON body, see below. |
+| 401 / 403 | Token expired or revoked. Running Claude Code once refreshes it. |
+| 429 | Rate limited. `Retry-After` (seconds) may be present. |
+| other | Transient or unknown failure. |
 
-Polling guidance that has worked well:
-
-- Default interval 90 s, minimum 30 s, maximum 1 h (user-configurable).
-- Add 0–5 s of jitter so you do not poll in lockstep with Claude Code, which
-  reads the same endpoint with the same token.
-- On any failure, exponential backoff: `base × 2^n`, capped at 10 minutes,
-  `n` capped at 6; reset on the next success or on a manual refresh.
-- Keep showing the last good snapshot while errors persist, with a status line.
-
-### 3.4 Full response example (real shape, values rounded)
+### 3.4 Raw response (real shape, values rounded)
 
 ```json
 {
@@ -241,105 +204,75 @@ Polling guidance that has worked well:
 }
 ```
 
+Any field may be absent or `null`; new top-level keys appear over time.
+
 ### 3.5 Field reference
 
-**Window object** (used by `five_hour`, `seven_day`, `seven_day_*` and every
-codenamed bucket):
+**Window object**, the shape of `five_hour`, `seven_day`, every `seven_day_*`
+key and every codenamed key:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `utilization` | number | Percent **used**, 0–100 (can exceed 100 briefly). |
-| `resets_at` | ISO-8601 string or null | When the window resets. Show a countdown. |
-| `limit_dollars`, `used_dollars`, `remaining_dollars` | number or null | Present (non-null) only for **dollar-denominated credit pools**. Amounts are in USD. |
+| `utilization` | number | Percent **used** of the window, 0–100 (can briefly exceed 100). |
+| `resets_at` | ISO-8601 string or null | When the window resets. |
+| `limit_dollars`, `used_dollars`, `remaining_dollars` | number or null | Non-null only for **dollar-denominated credit pools**. Amounts in USD. |
 | `locked_reason` | string or null | Non-null when the bucket is locked. |
 
-**Top-level windows**
+**Top-level keys**
 
 | Key | Meaning |
 |---|---|
-| `five_hour` | The rolling 5-hour session limit. |
-| `seven_day` | The rolling weekly limit across all models. |
-| `seven_day_opus`, `seven_day_sonnet` | Legacy per-model weekly windows. Often `null` now that `limits[]` exists. |
-| `seven_day_oauth_apps`, `seven_day_cowork`, `seven_day_omelette` | Other surfaces' weekly windows, usually `null`. |
-| codenamed keys (`tangelo`, `iguana_necktie`, `nimbus_quill`, `cinder_cove`, `copper_kite`, …) | Credit pools and experiments. Names are **obfuscated and can rotate**. Do not hard-code more than a label map. |
+| `five_hour` | Rolling 5-hour window. |
+| `seven_day` | Rolling 7-day window across all models. |
+| `seven_day_opus`, `seven_day_sonnet` | Legacy per-model weekly windows; usually `null` now that `limits[]` exists. |
+| `seven_day_oauth_apps`, `seven_day_cowork`, `seven_day_omelette` | Other surfaces' weekly windows; usually `null`. |
+| codenamed keys (`tangelo`, `iguana_necktie`, `nimbus_quill`, `cinder_cove`, `copper_kite`, `brass_thimble`, `harbor_lantern`, `wattle_ember`, `amber_ladder`, `amber_cistern`, `juniper_tide`, `cedar_ember`, `amber_gauge`, `omelette_promotional`) | Credit pools and experiments under **obfuscated names that can rotate**. A pool is recognisable by a non-null `limit_dollars`. |
+| `extra_usage` | Pay-as-you-go overflow credits ("usage credits"). |
+| `limits` | The self-describing list of active meters (below). |
+| `spend` | The overflow credits as money in minor units (`amount_minor / 10^exponent`), with purchase and toggle flags. |
+| `seven_day_breakdown` | Share of the weekly window per surface; percentages sum to about 100. |
+| `member_dashboard_available` | Whether an organisation dashboard exists for this account. |
 
-Known codenames (observed):
+Codenames observed so far:
 
-| Key | What it turned out to be |
+| Key | Observed meaning |
 |---|---|
-| `iguana_necktie` | The **cloud sessions** credit allowance (dollar pool with a reset date). |
-| `cinder_cove` | Shown by Claude Code as "Claude Code and Cowork credit", a one-time credit that expires. |
-| `nimbus_quill` | Present with zero utilisation and no dollars; ignore unless it grows. |
+| `iguana_necktie` | The **cloud sessions** credit allowance: a dollar pool with a reset date. |
+| `cinder_cove` | "Claude Code and Cowork credit" in Claude Code's `/usage`: a one-time credit with an expiry. |
+| `nimbus_quill` | Present with zero utilisation and no dollar figures. |
 
-**`limits[]` rows** — the modern, self-describing list. Claude Code's schema
-description says a client should "render them verbatim" so a new meter needs
-no client release.
+**`limits[]` rows.** Claude Code's own schema describes them as the server's
+usage rows, to be rendered verbatim so that a new meter needs no client change.
 
 | Field | Values / meaning |
 |---|---|
-| `kind` | `session`, `weekly_all`, `weekly_scoped` (others may appear). Classify rows on this, not on labels. |
-| `group` | `session` or `weekly`; rows render grouped under it in server order. |
+| `kind` | `session`, `weekly_all`, `weekly_scoped`; others may appear. Classify on this, not on labels. |
+| `group` | `session` or `weekly`; rows are grouped under it in server order. |
 | `percent` | Percent used, 0–100. |
-| `severity` | `normal`, `warning`, `critical` — the server's colour hint. |
+| `severity` | `normal`, `warning`, `critical`. |
 | `resets_at` | ISO-8601 or null. |
-| `scope` | null for the headline rows; `{ model: { id, display_name } }` for a per-model window (e.g. "Fable"); `{ surface: { display_name } }` for a per-surface window. |
+| `scope` | `null` for headline rows; `{ "model": { "id", "display_name" } }` for a per-model window (e.g. "Fable"); `{ "surface": { "display_name" } }` for a per-surface window. |
 | `is_active` | The server's pick for a single-value indicator. |
 
-**`extra_usage`** — pay-as-you-go overflow credits (a.k.a. "usage credits").
+**`extra_usage`**
 
 | Field | Meaning |
 |---|---|
 | `is_enabled` | Whether overflow is currently active. |
 | `monthly_limit`, `used_credits`, `utilization` | Monthly cap, used amount and percent, in `currency`. |
-| `currency`, `decimal_places` | Display hints (`EUR`, 2). |
+| `currency`, `decimal_places` | Currency code and display precision. |
 | `disabled_reason` | e.g. `out_of_credits`. |
-
-**`spend`** — the same overflow information as money in minor units
-(`amount_minor / 10^exponent`), plus purchase/toggle capability flags.
-
-**`seven_day_breakdown`** — share of the weekly window per surface
-(Claude Code, Chats, Cowork, Other). Percentages sum to ~100.
-
-### 3.6 Turning the payload into meters
-
-Recommended, forward-compatible algorithm:
-
-1. **Headline windows.** Take `five_hour` and `seven_day` (or the `session`
-   and `weekly_all` rows of `limits[]`). Percent used, reset countdown.
-2. **Scoped windows.** For every `limits[]` row whose `scope.model.display_name`
-   or `scope.surface.display_name` is non-empty, create a meter titled with
-   that label. Deduplicate by label against the legacy `seven_day_opus` /
-   `seven_day_sonnet` fields if you also read those.
-3. **Credit pools.** For every top-level key whose value is an object with a
-   numeric `limit_dollars`, create a credit meter:
-   - `used_pct = used_dollars / limit_dollars × 100`
-   - `remaining_pct = remaining_dollars / limit_dollars × 100`
-     (fall back to `100 − used_pct`)
-   - Represent it as a *fuel gauge*: draw what is left, colour by what is
-     used. Show `remaining`, `used / limit` and the reset date.
-   - Label from a small codename map; otherwise humanise the key.
-4. **Unknown unscoped `limits[]` kinds** (anything not `session`/`weekly*`):
-   show them under a humanised `kind` so nothing the server reports is hidden.
-5. **Extra usage.** Show `used_credits / monthly_limit` when `is_enabled` or
-   when `credits_ever_enabled`, with `currency`.
-6. **Colours.** Use the server's `severity` when present; otherwise a simple
-   ramp on percent used (green < 70, amber < 90, red).
-
-Percent semantics: every `utilization` / `percent` is **used**, never
-remaining. Only the credit pools carry an explicit `remaining_dollars`.
+| `user_disabled`, `spend_limit_reached`, `credits_ever_enabled` | Flags. |
+| `daily`, `weekly` | Sub-caps, `null` when unset. |
 
 ---
 
-## 4. Local token history
+## 4. Local token data
 
-The endpoint gives quotas, not token counts. Token counts come from Claude
-Code's own files next to the credentials.
-
-### 4.1 Transcripts (primary)
+### 4.1 Transcripts
 
 Path: `~/.claude/projects/<project-dir>/*.jsonl`, one JSON object per line.
-
-Only lines of this shape matter:
+Token counts are on lines of this shape:
 
 ```json
 {
@@ -357,23 +290,13 @@ Only lines of this shape matter:
 }
 ```
 
-Rules used by this widget:
+Other line types (`user`, `summary`, tool results, …) carry no usage.
+Synthetic assistant lines have a `message.model` starting with `<` and zero
+counters. Files are written in place while a session runs.
 
-- Keep lines with `type == "assistant"`, a `timestamp`, a `message.model`
-  that is non-empty and does not start with `<` (synthetic messages), and a
-  `message.usage` whose four counters do not all sum to zero.
-- Day = first 10 characters of `timestamp` (UTC date).
-- Aggregate per day per model, and per model overall.
-- For the chart, "work tokens" = `input + output + cache_creation`
-  (cache reads are cheap and would dwarf everything else).
-- Skip files whose modification time is older than `max_days + 2` days to
-  keep scans fast. Scanning 14 days of a busy machine takes well under a second.
+### 4.2 `stats-cache.json`
 
-### 4.2 `stats-cache.json` (fallback)
-
-Claude Code periodically writes `~/.claude/stats-cache.json`. It lags behind
-the transcripts and lacks cost detail, so use it only when no transcripts
-were found.
+Path: `~/.claude/stats-cache.json`, written periodically by Claude Code.
 
 ```json
 {
@@ -391,85 +314,14 @@ were found.
 }
 ```
 
-Sort `dailyModelTokens` by date and keep the most recent `max_days`.
-
-### 4.3 Estimated cost
-
-Subscribers are not billed per token, but an "API-equivalent" cost is a
-useful yardstick. Per million tokens, USD (approximate, keep it configurable):
-
-| Model family (substring match) | input | output | cache write | cache read |
-|---|---|---|---|---|
-| `opus` | 15 | 75 | 18.75 | 1.50 |
-| `haiku` | 1 | 5 | 1.25 | 0.10 |
-| anything else (Sonnet tier) | 3 | 15 | 3.75 | 0.30 |
-
-`cost = (input×p.in + output×p.out + cache_creation×p.write + cache_read×p.read) / 1e6`.
+It lags behind the transcripts and contains no cost information.
 
 ---
 
-## 5. Related signals you may also see
+## 5. Related signal: rate-limit headers
 
-Every Messages API response carries unified rate-limit headers, which Claude
-Code reads to show "approaching limit" banners. Names observed in the CLI:
-`anthropic-ratelimit-unified-*`, with limit types `five_hour`, `seven_day`,
-`seven_day_opus`, `seven_day_sonnet`, `seven_day_overage_included`
-(labelled "Fable limit" in the CLI) and `overage`. They are only useful if
-your app also makes model calls; a monitor should rely on the usage endpoint.
-
----
-
-## 6. Porting checklist
-
-1. Locate `.claude/.credentials.json` for each source (native user, WSL
-   distros, custom paths). Never write it.
-2. Parse `claudeAiOauth`; check `expiresAt` (ms) against now.
-3. `GET /api/oauth/usage` with `Authorization: Bearer <OAuth token>` and
-   `anthropic-beta: oauth-2025-04-20`; 20 s timeout. No API key, no cost,
-   no quota consumed (§3.2).
-4. Map 401/403 → "run Claude Code once"; 429 → `Retry-After` or backoff;
-   keep the last good snapshot.
-5. Parse leniently: every field optional, unknown keys kept (for codenamed
-   buckets and diagnostics).
-6. Build meters per §3.6; keep the raw JSON visible somewhere for support.
-7. Poll every 60–120 s with jitter; exponential backoff on errors.
-8. Optionally aggregate `projects/**/*.jsonl` for a token/cost chart, with
-   `stats-cache.json` as fallback.
-9. Keep the token in the backend process; the UI only ever sees numbers.
-
----
-
-## 7. Minimal reference implementation (pseudo-code)
-
-```text
-creds   = parse_json(read_file(credentials_path)).claudeAiOauth
-if creds.expiresAt and now_ms() >= creds.expiresAt: raise TokenExpired
-
-resp = http_get("https://api.anthropic.com/api/oauth/usage",
-                headers = { Authorization: "Bearer " + creds.accessToken,
-                            "anthropic-beta": "oauth-2025-04-20",
-                            "User-Agent": "my-usage-monitor" },
-                timeout = 20s)
-if resp.status in (401, 403): raise TokenExpired
-if resp.status == 429:        raise RateLimited(retry_after = resp.headers["Retry-After"])
-if resp.status != 200:        raise HttpError(resp.status)
-
-u = parse_json(resp.body)
-meters = []
-meters += window("5-hour", u.five_hour)
-meters += window("Week",   u.seven_day)
-for row in u.limits or []:
-    label = row.scope?.model?.display_name or row.scope?.surface?.display_name
-    if label:                         meters += scoped(label, row.percent, row.resets_at, row.severity)
-    elif row.kind not in HEADLINE:    meters += scoped(humanise(row.kind), row.percent, row.resets_at)
-for key, val in u.items():
-    if is_object(val) and is_number(val.limit_dollars):
-        meters += credit(LABELS.get(key, humanise(key)),
-                         used = val.used_dollars, limit = val.limit_dollars,
-                         remaining = val.remaining_dollars ?? limit - used,
-                         resets_at = val.resets_at)
-if u.extra_usage and (u.extra_usage.is_enabled or u.extra_usage.credits_ever_enabled):
-    meters += extra(u.extra_usage)
-```
-
-`LABELS = { "iguana_necktie": "Cloud sessions", "cinder_cove": "Claude Code and Cowork credit" }`
+Responses of the Messages API (when your own program calls a model with the
+subscription token) carry `anthropic-ratelimit-unified-*` headers. Claude
+Code reads them with limit types `five_hour`, `seven_day`, `seven_day_opus`,
+`seven_day_sonnet`, `seven_day_overage_included` (labelled "Fable limit") and
+`overage`. They only exist on model calls; a pure monitor does not see them.
