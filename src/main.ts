@@ -203,7 +203,8 @@ async function applyWindowSize(): Promise<void> {
   try {
     await api.setWindowSize(s.w, s.h);
     const got = await api.windowSize();
-    windowNote = `Window: wanted ${s.w}×${s.h}, got ${got.w}×${got.h} (scale ${got.scale})`;
+    const rows = root.querySelectorAll(".cbar, .cring").length;
+    windowNote = `Window: wanted ${s.w}×${s.h}, got ${got.w}×${got.h} (scale ${got.scale}, ${rows} mini meters, compact=${state.config.compact})`;
   } catch (e) {
     windowNote = `Window resize failed: ${errText(e)}`;
   }
@@ -239,8 +240,9 @@ async function setMeter(id: string, kind: keyof MeterDisplay, value: boolean): P
 async function copyRaw(): Promise<void> {
   const raw = state.usage?.rawJson;
   if (!raw) return;
+  const text = `${state.windowNote}\n${raw}`;
   try {
-    await navigator.clipboard.writeText(raw);
+    await navigator.clipboard.writeText(text);
   } catch {
     const ta = root.querySelector<HTMLTextAreaElement>("textarea.raw");
     ta?.select();

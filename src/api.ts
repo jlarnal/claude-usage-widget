@@ -46,14 +46,28 @@ export async function windowSize(): Promise<{ w: number; h: number; scale: numbe
   return { w: Math.round(inner.width), h: Math.round(inner.height), scale };
 }
 
+/** The floor from tauri.conf.json, restored before every resize. */
+const MIN_W = 180;
+const MIN_H = 76;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /**
- * Resize to `width`×`height` CSS pixels. The size is read back afterwards and,
- * if the window came out smaller (seen on Windows when the DPI scale is not
- * yet applied), it is set again in physical pixels.
+ * Resize to `width`×`height` CSS pixels.
+ *
+ * Windows applies the resize asynchronously (tao issues SetWindowPos with
+ * SWP_ASYNCWINDOWPOS), so this uses two mechanisms: the plain resize, then a
+ * minimum-size constraint equal to the target, which makes Windows re-check
+ * the window bounds and grow it if the first request was dropped. The size is
+ * read back after a short wait and, if still smaller, set again in physical
+ * pixels (DPI scale not yet applied).
  */
 export async function setWindowSize(width: number, height: number): Promise<void> {
   const win = getCurrentWindow();
+  await win.setMinSize(new LogicalSize(MIN_W, MIN_H));
   await win.setSize(new LogicalSize(width, height));
+  await win.setMinSize(new LogicalSize(width, height));
+  await sleep(150);
   const got = await windowSize();
   if (got.w < width || got.h < height) {
     await win.setSize(
