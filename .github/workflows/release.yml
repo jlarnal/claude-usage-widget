@@ -1,11 +1,19 @@
 name: release
 
-# Build the Windows installer and publish a GitHub Release when a version tag
-# is pushed, e.g.  git tag v0.1.0 && git push origin v0.1.0
+# Build the Windows x64 installer and publish a GitHub Release when a version
+# tag is pushed, e.g.  git tag v0.1.0 && git push origin v0.1.0
+# It can also be run by hand (Actions → release → Run workflow) on any branch;
+# the tag is then created at that branch's head if it does not exist yet.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -35,8 +43,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Claude Usage Widget ${{ github.ref_name }}"
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: "Claude Usage Widget ${{ inputs.tag || github.ref_name }}"
           releaseBody: |
             Download the installer below (`*-setup.exe`).
 
