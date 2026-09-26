@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "claude-usage-widget"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "claude-usage-core",
  "reqwest 0.12.28",
