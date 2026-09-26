@@ -117,7 +117,20 @@ User-Agent: <your app name>
   uses it when it hits a limit). Semantics unverified; the plain URL is enough.
 - Use a request timeout (this widget uses 20 s).
 
-### 3.2 Responses and errors
+### 3.2 What the request needs and what it costs
+
+| Requirement | Detail |
+|---|---|
+| Authentication | The **OAuth access token** from `.credentials.json` (a subscription login). A Console **API key does not work** here, and the endpoint is meaningless for API-key, Bedrock or Vertex users, who have no plan windows. |
+| Scope | The token must carry the `user:profile` scope (Claude Code's normal login grants `user:inference` and `user:profile`). Claude Code reports plan limits as unavailable when that scope is missing. |
+| Beta header | `anthropic-beta: oauth-2025-04-20`, or the request is rejected. |
+| Price | **None.** It is a metadata read: no model is invoked, so it consumes **no tokens, no plan quota and no credits**, and nothing is billed. Polling every minute for a day did not move any window. |
+| Rate limit | The endpoint itself is rate limited (HTTP 429 with `Retry-After`). That is the only "cost": poll sensibly. |
+
+Reading the credentials file, the transcripts and `stats-cache.json` is
+local and free.
+
+### 3.3 Responses and errors
 
 | Status | Meaning | What to do |
 |---|---|---|
@@ -135,7 +148,7 @@ Polling guidance that has worked well:
   `n` capped at 6; reset on the next success or on a manual refresh.
 - Keep showing the last good snapshot while errors persist, with a status line.
 
-### 3.3 Full response example (real shape, values rounded)
+### 3.4 Full response example (real shape, values rounded)
 
 ```json
 {
@@ -228,7 +241,7 @@ Polling guidance that has worked well:
 }
 ```
 
-### 3.4 Field reference
+### 3.5 Field reference
 
 **Window object** (used by `five_hour`, `seven_day`, `seven_day_*` and every
 codenamed bucket):
@@ -287,7 +300,7 @@ no client release.
 **`seven_day_breakdown`** — share of the weekly window per surface
 (Claude Code, Chats, Cowork, Other). Percentages sum to ~100.
 
-### 3.5 Turning the payload into meters
+### 3.6 Turning the payload into meters
 
 Recommended, forward-compatible algorithm:
 
@@ -411,13 +424,14 @@ your app also makes model calls; a monitor should rely on the usage endpoint.
 1. Locate `.claude/.credentials.json` for each source (native user, WSL
    distros, custom paths). Never write it.
 2. Parse `claudeAiOauth`; check `expiresAt` (ms) against now.
-3. `GET /api/oauth/usage` with `Authorization: Bearer` and
-   `anthropic-beta: oauth-2025-04-20`; 20 s timeout.
+3. `GET /api/oauth/usage` with `Authorization: Bearer <OAuth token>` and
+   `anthropic-beta: oauth-2025-04-20`; 20 s timeout. No API key, no cost,
+   no quota consumed (§3.2).
 4. Map 401/403 → "run Claude Code once"; 429 → `Retry-After` or backoff;
    keep the last good snapshot.
 5. Parse leniently: every field optional, unknown keys kept (for codenamed
    buckets and diagnostics).
-6. Build meters per §3.5; keep the raw JSON visible somewhere for support.
+6. Build meters per §3.6; keep the raw JSON visible somewhere for support.
 7. Poll every 60–120 s with jitter; exponential backoff on errors.
 8. Optionally aggregate `projects/**/*.jsonl` for a token/cost chart, with
    `stats-cache.json` as fallback.
