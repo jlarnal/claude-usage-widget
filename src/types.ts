@@ -80,6 +80,12 @@ export interface StatsHistory {
 
 export type CompactStyle = "bars" | "rings";
 
+/** How one usage meter is drawn in the expanded layout. */
+export interface MeterDisplay {
+  ring: boolean;
+  bar: boolean;
+}
+
 export interface AppConfig {
   selectedSourceId: string | null;
   customPaths: string[];
@@ -87,6 +93,8 @@ export interface AppConfig {
   alwaysOnTop: boolean;
   compact: boolean;
   compactStyle: CompactStyle;
+  /** Per-meter ring/bar choice keyed by meter id; unlisted meters use defaults. */
+  meters: Record<string, MeterDisplay>;
 }
 
 export type StatusKind =

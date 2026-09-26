@@ -1,11 +1,21 @@
 //! Widget configuration persisted to the app config directory.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tauri::Manager;
 
 const DEFAULT_REFRESH_SECONDS: u32 = 90;
 const MIN_REFRESH_SECONDS: u32 = 30;
+
+/// How one usage meter is drawn in the expanded layout.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeterDisplay {
+    #[serde(default)]
+    pub ring: bool,
+    #[serde(default)]
+    pub bar: bool,
+}
 
 /// User-tweakable widget settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +39,10 @@ pub struct AppConfig {
     /// Compact representation: `"bars"` or `"rings"`.
     #[serde(default = "default_compact_style")]
     pub compact_style: String,
+    /// Per-meter ring/bar choice keyed by meter id (`five_hour`, `seven_day`,
+    /// or a lowercased model/surface label). Meters not listed use the defaults.
+    #[serde(default)]
+    pub meters: BTreeMap<String, MeterDisplay>,
 }
 
 fn default_refresh() -> u32 {
@@ -52,6 +66,7 @@ impl Default for AppConfig {
             always_on_top: true,
             compact: false,
             compact_style: default_compact_style(),
+            meters: BTreeMap::new(),
         }
     }
 }

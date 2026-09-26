@@ -2,7 +2,8 @@
 
 import { ago, escapeHtml, fmtPct, fmtUsd, formatCountdown, utilColor } from "../format";
 import { selectedSource, type UiState } from "../state";
-import type { ExtraUsage, LimitRow, Source, StatsHistory, UsageSnapshot, UsageWindow } from "../types";
+import { listMeters, meterDisplay, type Meter } from "../meters";
+import type { AppConfig, ExtraUsage, Source, StatsHistory, UsageSnapshot } from "../types";
 import { historyChart } from "./chart";
 import { miniBar, ringGauge } from "./gauge";
 
@@ -94,7 +95,7 @@ function renderBody(state: UiState, now: number): string {
     );
   }
   if (state.usage) {
-    return renderUsage(state.usage, state.stats, now);
+    return renderUsage(state.usage, state.stats, now, state.config);
   }
   if (state.status.kind === "unauthorized") {
     return emptyState(
@@ -115,46 +116,31 @@ function renderBody(state: UiState, now: number): string {
   return `<div class="loading">Loading usage…</div>`;
 }
 
-function renderUsage(u: UsageSnapshot, stats: StatsHistory | null, now: number): string {
-  const gauges = `
-    <div class="gauges">
-      ${gaugeCol("5-hour", u.fiveHour, now)}
-      ${gaugeCol("Week", u.sevenDay, now)}
-    </div>`;
+function renderUsage(
+  u: UsageSnapshot,
+  stats: StatsHistory | null,
+  now: number,
+  config: AppConfig,
+): string {
+  const meters = listMeters(u);
+  const rings = meters.filter((m) => meterDisplay(config, m).ring);
+  const bars = meters.filter((m) => meterDisplay(config, m).bar);
 
-  const models: string[] = [];
-  const shown = new Set<string>();
-  if (u.sevenDayOpus) {
-    models.push(miniBar("Opus", u.sevenDayOpus.utilization));
-    shown.add("opus");
-  }
-  if (u.sevenDaySonnet) {
-    models.push(miniBar("Sonnet", u.sevenDaySonnet.utilization));
-    shown.add("sonnet");
-  }
-  for (const row of scopedLimits(u.limits)) {
-    const label = scopeLabel(row);
-    if (!label || shown.has(label.toLowerCase())) continue;
-    shown.add(label.toLowerCase());
-    models.push(miniBar(escapeHtml(label), row.percent));
-  }
-  const modelBlock = models.length
-    ? `<div class="models">${models.join("")}</div>`
+  // Two rings fit side by side at full size; more shrink so three share a row.
+  const small = rings.length > 2;
+  const gauges = rings.length
+    ? `<div class="gauges${small ? " small" : ""}">${rings
+        .map((m) => gaugeCol(m, now, small))
+        .join("")}</div>`
+    : "";
+
+  const modelBlock = bars.length
+    ? `<div class="models">${bars
+        .map((m) => miniBar(escapeHtml(m.title), m.percent))
+        .join("")}</div>`
     : "";
 
   return `${gauges}${modelBlock}${extraUsageBlock(u.extraUsage)}${historyChart(stats)}`;
-}
-
-/** Rows of `limits[]` scoped to a model (e.g. Fable) or a surface (e.g. cloud sessions). */
-function scopedLimits(limits: LimitRow[] | null | undefined): LimitRow[] {
-  if (!limits) return [];
-  return limits.filter((row) => scopeLabel(row) !== null);
-}
-
-/** The server-supplied label for a scoped row, or null for unscoped rows. */
-function scopeLabel(row: LimitRow): string | null {
-  const name = row.scope?.model?.display_name ?? row.scope?.surface?.display_name ?? "";
-  return name.trim() ? name.trim() : null;
 }
 
 function extraUsageBlock(extra: ExtraUsage | null): string {
@@ -175,14 +161,14 @@ function extraUsageBlock(extra: ExtraUsage | null): string {
   </div>`;
 }
 
-function gaugeCol(title: string, win: UsageWindow | null | undefined, now: number): string {
-  const pct = win?.utilization ?? 0;
-  const reset = win?.resets_at ?? null;
+function gaugeCol(m: Meter, now: number, small: boolean): string {
+  const reset = m.resetsAt;
+  const ring = small ? ringGauge(m.percent, { size: 84, stroke: 8 }) : ringGauge(m.percent);
   return `
     <div class="gcol">
-      ${ringGauge(pct)}
+      ${ring}
       <div class="gmeta">
-        <span class="gtitle">${title}</span>
+        <span class="gtitle" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</span>
         <span class="reset"${reset ? ` data-reset="${reset}"` : ""}>${
           reset ? `resets in ${formatCountdown(reset, now)}` : "no reset"
         }</span>
@@ -247,6 +233,13 @@ function renderSettings(state: UiState): string {
           state.config.alwaysOnTop ? "checked" : ""
         } />
       </label>
+      <div class="field">
+        <span class="field-label">Meters</span>
+        <div class="meter-list">
+          <div class="meter-row meter-head"><span></span><span>Ring</span><span>Bar</span></div>
+          ${listMeters(state.usage).map((m) => meterRow(m, meterDisplay(state.config, m))).join("")}
+        </div>
+      </div>
       <div class="field row">
         <span class="field-label">Minimized style</span>
         <div class="seg-toggle">
@@ -265,6 +258,19 @@ function renderSettings(state: UiState): string {
       <div class="hint">Token stays local and is sent only to api.anthropic.com. Refresh is owned by Claude Code.</div>
     </div>
   </div>`;
+}
+
+function meterRow(m: Meter, d: { ring: boolean; bar: boolean }): string {
+  const box = (kind: "ring" | "bar", on: boolean): string =>
+    `<input type="checkbox" data-action="set-meter" data-meter="${escapeHtml(m.id)}" data-kind="${kind}" ${
+      on ? "checked" : ""
+    } title="${kind === "ring" ? "Show as ring" : "Show as bar"}" />`;
+  return `
+    <div class="meter-row">
+      <span class="meter-name" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</span>
+      ${box("ring", d.ring)}
+      ${box("bar", d.bar)}
+    </div>`;
 }
 
 function sourceRow(s: Source, selected: boolean): string {

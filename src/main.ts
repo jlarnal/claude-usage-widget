@@ -2,6 +2,7 @@ import "./styles.css";
 
 import * as api from "./api";
 import { ago, formatCountdown } from "./format";
+import { listMeters, meterDisplay } from "./meters";
 import { initialState, selectedSource, type UiState } from "./state";
 import type { AppConfig, CompactStyle, Source } from "./types";
 import { renderApp } from "./ui/app";
@@ -193,6 +194,16 @@ async function setCompactStyle(style: CompactStyle): Promise<void> {
   if (config.compact) await applyWindowSize();
 }
 
+async function setMeter(id: string, kind: "ring" | "bar", value: boolean): Promise<void> {
+  const meter = listMeters(state.usage).find((m) => m.id === id);
+  if (!meter) return;
+  const current = meterDisplay(state.config, meter);
+  const meters = { ...state.config.meters, [id]: { ...current, [kind]: value } };
+  const config: AppConfig = { ...state.config, meters };
+  setState({ config });
+  await api.setConfig(config).catch(() => {});
+}
+
 async function addCustom(): Promise<void> {
   let path: string | null = null;
   try {
@@ -281,6 +292,13 @@ function onChange(e: Event): void {
     case "set-compact-style":
       void setCompactStyle((el as HTMLInputElement).value as CompactStyle);
       break;
+    case "set-meter":
+      void setMeter(
+        el.getAttribute("data-meter") ?? "",
+        el.getAttribute("data-kind") === "ring" ? "ring" : "bar",
+        (el as HTMLInputElement).checked,
+      );
+      break;
   }
 }
 
@@ -298,6 +316,7 @@ async function init(): Promise<void> {
       alwaysOnTop: true,
       compact: false,
       compactStyle: "bars",
+      meters: {},
     };
   }
   state = initialState(config);

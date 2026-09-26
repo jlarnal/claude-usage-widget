@@ -23,6 +23,8 @@ Prefer to build it yourself? See [Build](#build) below.
   reset countdowns.
 - **Per-model and per-surface weekly windows** (Opus / Sonnet / Fable / cloud
   sessions, plus any new meter the server adds) as compact bars when present.
+- **Per-meter display choice** — in settings, each meter can be shown as a
+  ring, a bar, both, or hidden.
 - **Local token history** — a stacked daily chart from `stats-cache.json`.
 - **Source switcher** — pick between your Windows install and any WSL distro, or
   add a custom `.credentials.json` path. One source shown at a time; switch from

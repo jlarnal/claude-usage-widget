@@ -68,6 +68,7 @@ function baseState(): UiState {
     alwaysOnTop: true,
     compact: false,
     compactStyle: "bars",
+    meters: {},
   });
   return {
     ...base,
@@ -90,8 +91,21 @@ export function previewFrames(): PreviewFrame[] {
     ...s,
     config: { ...s.config, compact, compactStyle },
   });
+  const ringsAndBars: UiState = {
+    ...s,
+    config: {
+      ...s.config,
+      meters: {
+        fable: { ring: true, bar: true },
+        "cloud sessions": { ring: true, bar: false },
+        sonnet: { ring: false, bar: false },
+      },
+    },
+  };
   return [
     { label: "Expanded", w: 300, h: 432, html: renderApp(withCfg(false, "bars")) },
+    { label: "Expanded · custom meters", w: 300, h: 432, html: renderApp(ringsAndBars) },
+    { label: "Settings", w: 300, h: 432, html: renderApp({ ...ringsAndBars, settingsOpen: true }) },
     { label: "Compact · Bars", w: 240, h: 86, html: renderApp(withCfg(true, "bars")) },
     { label: "Compact · Rings", w: 200, h: 124, html: renderApp(withCfg(true, "rings")) },
   ];
