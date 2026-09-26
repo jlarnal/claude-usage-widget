@@ -459,7 +459,7 @@ body {
 }
 .meter-row {
   display: grid;
-  grid-template-columns: 1fr 40px 40px;
+  grid-template-columns: 1fr 36px 36px 36px;
   align-items: center;
   font-size: 11.5px;
   padding: 3px 6px;
@@ -521,6 +521,34 @@ body {
   opacity: 0.85;
 }
 
+.diag summary {
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.diag .btn {
+  margin: 6px 0;
+}
+.raw {
+  width: 100%;
+  height: 120px;
+  box-sizing: border-box;
+  resize: vertical;
+  font: 9.5px/1.35 Consolas, monospace;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  white-space: pre;
+}
+.version {
+  font-size: 9.5px;
+  color: var(--muted);
+  text-align: center;
+  opacity: 0.7;
+}
+
 /* ---- segmented toggle (settings) ---- */
 .seg-toggle {
   display: flex;
@@ -580,10 +608,15 @@ body {
   width: 100%;
 }
 .cbar-label {
-  flex: 0 0 22px;
+  flex: 0 0 auto;
+  min-width: 22px;
+  max-width: 72px;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cbar .mini-track {
   flex: 1 1 auto;
@@ -612,6 +645,10 @@ body {
 .cring-label {
   font-size: 10px;
   color: var(--muted);
+  max-width: 64px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .compact .gauge-pct {
   font-size: 17px;

@@ -14,13 +14,34 @@ export interface Meter {
   scoped: boolean;
 }
 
-/** Defaults: the two headline windows are rings, scoped windows are bars. */
-export const DEFAULT_DISPLAY_MAIN: MeterDisplay = { ring: true, bar: false };
-export const DEFAULT_DISPLAY_SCOPED: MeterDisplay = { ring: false, bar: true };
+/** Defaults: the two headline windows are rings (and minimized), scoped windows are bars. */
+export const DEFAULT_DISPLAY_MAIN: MeterDisplay = { ring: true, bar: false, mini: true };
+export const DEFAULT_DISPLAY_SCOPED: MeterDisplay = { ring: false, bar: true, mini: false };
 
 /** How `m` is drawn: the user's choice when set, else the default for its kind. */
 export function meterDisplay(config: AppConfig, m: Meter): MeterDisplay {
   return config.meters[m.id] ?? (m.scoped ? DEFAULT_DISPLAY_SCOPED : DEFAULT_DISPLAY_MAIN);
+}
+
+/** Row kinds already covered by the 5-hour / Week meters. */
+const HEADLINE_KINDS = new Set(["session", "weekly", "weekly_all", "five_hour", "seven_day"]);
+
+/** `cloud_sessions_credit` -> `Cloud sessions credit`. */
+function humanizeKind(kind: string): string {
+  const words = kind.replace(/[_-]+/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : "";
+}
+
+/** True when a meter is shown in the minimized layout. */
+export function meterInMini(config: AppConfig, m: Meter): boolean {
+  return meterDisplay(config, m).mini;
+}
+
+/** Short label for the minimized layout. */
+export function compactLabel(m: Meter): string {
+  if (m.id === "five_hour") return "5h";
+  if (m.id === "seven_day") return "7d";
+  return m.title;
 }
 
 /** The server-supplied label for a scoped `limits[]` row, or null for unscoped rows. */
@@ -64,7 +85,13 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
   if (u.sevenDaySonnet) pushScoped("Sonnet", u.sevenDaySonnet.utilization, u.sevenDaySonnet.resets_at);
   for (const row of u.limits ?? []) {
     const label = scopeLabel(row);
-    if (label) pushScoped(label, row.percent, row.resets_at);
+    if (label) {
+      pushScoped(label, row.percent, row.resets_at);
+    } else if (row.kind && !HEADLINE_KINDS.has(row.kind) && !row.kind.startsWith("weekly")) {
+      // An unscoped meter of a kind this widget does not know (e.g. a credit
+      // pool): shown under its kind so nothing the server reports is hidden.
+      pushScoped(humanizeKind(row.kind), row.percent, row.resets_at);
+    }
   }
   return out;
 }

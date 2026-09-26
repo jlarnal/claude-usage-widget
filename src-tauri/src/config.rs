@@ -15,6 +15,9 @@ pub struct MeterDisplay {
     pub ring: bool,
     #[serde(default)]
     pub bar: bool,
+    /// Shown in the minimized layout.
+    #[serde(default)]
+    pub mini: bool,
 }
 
 /// User-tweakable widget settings.

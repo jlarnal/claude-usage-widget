@@ -1,6 +1,8 @@
 // Renders the widget with mock data for the static `preview.html`.
 // Pure: imports no Tauri APIs, so it runs in a plain browser/Node bundle.
 
+import { compactSize } from "./layout";
+import { listMeters, meterInMini } from "./meters";
 import { initialState, type UiState } from "./state";
 import type { CompactStyle, DailyTokens, StatsHistory, UsageSnapshot } from "./types";
 import { renderApp } from "./ui/app";
@@ -30,8 +32,17 @@ const usage: UsageSnapshot = {
     { kind: "weekly_scoped", group: "weekly", percent: 61, resets_at: null, scope: { model: { display_name: "Fable" }, surface: null }, severity: "warning", is_active: false },
     { kind: "weekly_scoped", group: "weekly", percent: 5, resets_at: null, scope: { model: null, surface: { display_name: "Cloud sessions" } }, severity: "normal", is_active: false },
   ],
+  rawJson: "",
   fetchedAtMs: Date.now(),
 };
+usage.rawJson = JSON.stringify({
+  five_hour: usage.fiveHour,
+  seven_day: usage.sevenDay,
+  seven_day_opus: usage.sevenDayOpus,
+  seven_day_sonnet: usage.sevenDaySonnet,
+  extra_usage: usage.extraUsage,
+  limits: usage.limits,
+});
 
 const days: DailyTokens[] = [
   { date: "2026-06-01", tokensByModel: { "claude-sonnet-4-6": 152000 }, costUsd: 0.74 },
@@ -96,17 +107,29 @@ export function previewFrames(): PreviewFrame[] {
     config: {
       ...s.config,
       meters: {
-        fable: { ring: true, bar: true },
-        "cloud sessions": { ring: true, bar: false },
-        sonnet: { ring: false, bar: false },
+        fable: { ring: true, bar: true, mini: true },
+        "cloud sessions": { ring: true, bar: false, mini: true },
+        sonnet: { ring: false, bar: false, mini: false },
       },
     },
   };
+  const miniCount = (st: UiState): number =>
+    listMeters(st.usage).filter((m) => meterInMini(st.config, m)).length;
   return [
     { label: "Expanded", w: 300, h: 432, html: renderApp(withCfg(false, "bars")) },
     { label: "Expanded · custom meters", w: 300, h: 432, html: renderApp(ringsAndBars) },
     { label: "Settings", w: 300, h: 432, html: renderApp({ ...ringsAndBars, settingsOpen: true }) },
     { label: "Compact · Bars", w: 240, h: 86, html: renderApp(withCfg(true, "bars")) },
     { label: "Compact · Rings", w: 200, h: 124, html: renderApp(withCfg(true, "rings")) },
+    {
+      label: "Compact · Bars · custom meters",
+      ...compactSize("bars", miniCount(ringsAndBars)),
+      html: renderApp({ ...ringsAndBars, config: { ...ringsAndBars.config, compact: true, compactStyle: "bars" } }),
+    },
+    {
+      label: "Compact · Rings · custom meters",
+      ...compactSize("rings", miniCount(ringsAndBars)),
+      html: renderApp({ ...ringsAndBars, config: { ...ringsAndBars.config, compact: true, compactStyle: "rings" } }),
+    },
   ];
 }

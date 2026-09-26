@@ -43,6 +43,8 @@ export interface UsageSnapshot {
   sevenDaySonnet: UsageWindow | null;
   extraUsage: ExtraUsage | null;
   limits: LimitRow[] | null;
+  /** The usage response body as received (no token), for diagnostics. */
+  rawJson: string;
   fetchedAtMs: number;
 }
 
@@ -84,6 +86,8 @@ export type CompactStyle = "bars" | "rings";
 export interface MeterDisplay {
   ring: boolean;
   bar: boolean;
+  /** Shown in the minimized layout. */
+  mini: boolean;
 }
 
 export interface AppConfig {

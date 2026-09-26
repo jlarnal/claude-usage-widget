@@ -13,6 +13,9 @@ const res = await build({
   format: "esm",
   write: false,
   platform: "neutral",
+  define: {
+    __APP_VERSION__: JSON.stringify(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version),
+  },
 });
 const code = res.outputFiles[0].text;
 const mod = await import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));

@@ -94,6 +94,9 @@ pub struct RawUsage {
     pub extra_usage: Option<ExtraUsage>,
     #[serde(default)]
     pub limits: Option<Vec<LimitRow>>,
+    /// The response body as received, for the diagnostics panel. Contains no token.
+    #[serde(skip)]
+    pub raw_json: String,
 }
 
 /// What the frontend renders: usage windows plus a friendly plan label.
@@ -110,6 +113,7 @@ pub struct UsageSnapshot {
     pub seven_day_sonnet: Option<UsageWindow>,
     pub extra_usage: Option<ExtraUsage>,
     pub limits: Option<Vec<LimitRow>>,
+    pub raw_json: String,
     pub fetched_at_ms: i64,
 }
 
@@ -187,7 +191,10 @@ pub async fn fetch_raw_usage(
     if !status.is_success() {
         return Err(CoreError::Http(status.as_u16()));
     }
-    Ok(resp.json::<RawUsage>().await?)
+    let text = resp.text().await?;
+    let mut raw = parse_usage(&text)?;
+    raw.raw_json = text;
+    Ok(raw)
 }
 
 /// Fetch usage and assemble a snapshot for the given credentials.
@@ -210,6 +217,7 @@ pub async fn fetch_usage_snapshot(
         seven_day_sonnet: raw.seven_day_sonnet,
         extra_usage: raw.extra_usage,
         limits: raw.limits,
+        raw_json: raw.raw_json,
         fetched_at_ms: now_ms,
     })
 }

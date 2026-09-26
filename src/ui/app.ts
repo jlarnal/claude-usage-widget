@@ -2,8 +2,8 @@
 
 import { ago, escapeHtml, fmtPct, fmtUsd, formatCountdown, utilColor } from "../format";
 import { selectedSource, type UiState } from "../state";
-import { listMeters, meterDisplay, type Meter } from "../meters";
-import type { AppConfig, ExtraUsage, Source, StatsHistory, UsageSnapshot } from "../types";
+import { compactLabel, listMeters, meterDisplay, meterInMini, type Meter } from "../meters";
+import type { AppConfig, ExtraUsage, MeterDisplay, Source, StatsHistory, UsageSnapshot } from "../types";
 import { historyChart } from "./chart";
 import { miniBar, ringGauge } from "./gauge";
 
@@ -21,17 +21,20 @@ export function renderApp(state: UiState): string {
   </div>`;
 }
 
-/** The small minimized layout: two metrics as bars or mini rings. */
+/** The small minimized layout: every meter marked "Mini" as bars or mini rings. */
 function renderCompact(state: UiState): string {
   const u = state.usage;
   const style = state.config.compactStyle;
-  const five = u?.fiveHour?.utilization ?? 0;
-  const week = u?.sevenDay?.utilization ?? 0;
+  const meters = listMeters(u).filter((m) => meterInMini(state.config, m));
 
   const content =
     style === "rings"
-      ? `<div class="crings">${compactRing("5h", five)}${compactRing("Wk", week)}</div>`
-      : `<div class="cbars">${compactBar("5h", five)}${compactBar("7d", week)}</div>`;
+      ? `<div class="crings">${meters
+          .map((m) => compactRing(escapeHtml(compactLabel(m)), m.percent))
+          .join("")}</div>`
+      : `<div class="cbars">${meters
+          .map((m) => compactBar(escapeHtml(compactLabel(m)), m.percent))
+          .join("")}</div>`;
 
   const dimmed = u ? "" : " dimmed";
   return `
@@ -45,14 +48,14 @@ function compactBar(label: string, pct: number): string {
   const p = Math.max(0, Math.min(100, pct));
   return `
   <div class="cbar">
-    <span class="cbar-label">${label}</span>
+    <span class="cbar-label" title="${label}">${label}</span>
     <div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${utilColor(p)}"></div></div>
     <span class="cbar-pct">${fmtPct(p)}%</span>
   </div>`;
 }
 
 function compactRing(label: string, pct: number): string {
-  return `<div class="cring">${ringGauge(pct, { size: 60, stroke: 7 })}<span class="cring-label">${label}</span></div>`;
+  return `<div class="cring">${ringGauge(pct, { size: 60, stroke: 7 })}<span class="cring-label" title="${label}">${label}</span></div>`;
 }
 
 function renderTopbar(state: UiState): string {
@@ -236,7 +239,7 @@ function renderSettings(state: UiState): string {
       <div class="field">
         <span class="field-label">Meters</span>
         <div class="meter-list">
-          <div class="meter-row meter-head"><span></span><span>Ring</span><span>Bar</span></div>
+          <div class="meter-row meter-head"><span></span><span>Ring</span><span>Bar</span><span>Mini</span></div>
           ${listMeters(state.usage).map((m) => meterRow(m, meterDisplay(state.config, m))).join("")}
         </div>
       </div>
@@ -256,20 +259,47 @@ function renderSettings(state: UiState): string {
         </div>
       </div>
       <div class="hint">Token stays local and is sent only to api.anthropic.com. Refresh is owned by Claude Code.</div>
+      ${diagnostics(state)}
+      <div class="version">Claude Usage Widget v${escapeHtml(APP_VERSION)}</div>
     </div>
   </div>`;
 }
 
-function meterRow(m: Meter, d: { ring: boolean; bar: boolean }): string {
-  const box = (kind: "ring" | "bar", on: boolean): string =>
+declare const __APP_VERSION__: string | undefined;
+const APP_VERSION: string = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
+
+/** The last usage response, pretty-printed, so unexpected meters can be reported. */
+function diagnostics(state: UiState): string {
+  const raw = state.usage?.rawJson ?? "";
+  let pretty = raw;
+  try {
+    pretty = JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    // keep the body as received
+  }
+  return `
+      <details class="diag">
+        <summary>Raw usage response</summary>
+        <button class="btn" data-action="copy-raw" ${raw ? "" : "disabled"}>Copy to clipboard</button>
+        <textarea class="raw" readonly data-no-drag spellcheck="false">${escapeHtml(
+          pretty || "No response yet.",
+        )}</textarea>
+      </details>`;
+}
+
+const METER_KIND_TITLES = { ring: "Show as ring", bar: "Show as bar", mini: "Show when minimized" };
+
+function meterRow(m: Meter, d: MeterDisplay): string {
+  const box = (kind: keyof MeterDisplay): string =>
     `<input type="checkbox" data-action="set-meter" data-meter="${escapeHtml(m.id)}" data-kind="${kind}" ${
-      on ? "checked" : ""
-    } title="${kind === "ring" ? "Show as ring" : "Show as bar"}" />`;
+      d[kind] ? "checked" : ""
+    } title="${METER_KIND_TITLES[kind]}" />`;
   return `
     <div class="meter-row">
       <span class="meter-name" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</span>
-      ${box("ring", d.ring)}
-      ${box("bar", d.bar)}
+      ${box("ring")}
+      ${box("bar")}
+      ${box("mini")}
     </div>`;
 }
 

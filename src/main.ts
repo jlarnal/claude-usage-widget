@@ -2,9 +2,10 @@ import "./styles.css";
 
 import * as api from "./api";
 import { ago, formatCountdown } from "./format";
-import { listMeters, meterDisplay } from "./meters";
+import { compactSize, SIZE_EXPANDED } from "./layout";
+import { listMeters, meterDisplay, meterInMini } from "./meters";
 import { initialState, selectedSource, type UiState } from "./state";
-import type { AppConfig, CompactStyle, Source } from "./types";
+import type { AppConfig, CompactStyle, MeterDisplay, Source } from "./types";
 import { renderApp } from "./ui/app";
 
 const STATS_REFRESH_MS = 5 * 60 * 1000;
@@ -12,12 +13,6 @@ const MIN_REFRESH = 30;
 const MAX_REFRESH = 3600;
 const MAX_BACKOFF_MS = 10 * 60 * 1000;
 const MAX_BACKOFF_LEVEL = 6;
-
-const SIZE_EXPANDED = { w: 300, h: 432 };
-const SIZE_COMPACT: Record<CompactStyle, { w: number; h: number }> = {
-  bars: { w: 240, h: 86 },
-  rings: { w: 200, h: 124 },
-};
 
 const root = document.getElementById("app") as HTMLElement;
 
@@ -75,7 +70,10 @@ async function refreshUsage(): Promise<void> {
   try {
     const usage = await api.fetchUsage(src.credentialsPath);
     backoffLevel = 0; // recovered — resume normal cadence
+    const before = miniMeterCount();
     setState({ usage, status: { kind: "ok" }, lastUpdatedMs: Date.now() });
+    // New meters can appear with the first fetch; grow the minimized window to fit.
+    if (state.config.compact && miniMeterCount() !== before) await applyWindowSize();
   } catch (e) {
     // Any failure backs the poller off so we don't hammer the endpoint.
     backoffLevel = Math.min(backoffLevel + 1, MAX_BACKOFF_LEVEL);
@@ -175,8 +173,14 @@ async function setAot(value: boolean): Promise<void> {
   await api.setAlwaysOnTop(value).catch(() => {});
 }
 
+function miniMeterCount(): number {
+  return listMeters(state.usage).filter((m) => meterInMini(state.config, m)).length;
+}
+
 async function applyWindowSize(): Promise<void> {
-  const s = state.config.compact ? SIZE_COMPACT[state.config.compactStyle] : SIZE_EXPANDED;
+  const s = state.config.compact
+    ? compactSize(state.config.compactStyle, miniMeterCount())
+    : SIZE_EXPANDED;
   await api.setWindowSize(s.w, s.h).catch(() => {});
 }
 
@@ -194,7 +198,7 @@ async function setCompactStyle(style: CompactStyle): Promise<void> {
   if (config.compact) await applyWindowSize();
 }
 
-async function setMeter(id: string, kind: "ring" | "bar", value: boolean): Promise<void> {
+async function setMeter(id: string, kind: keyof MeterDisplay, value: boolean): Promise<void> {
   const meter = listMeters(state.usage).find((m) => m.id === id);
   if (!meter) return;
   const current = meterDisplay(state.config, meter);
@@ -202,6 +206,19 @@ async function setMeter(id: string, kind: "ring" | "bar", value: boolean): Promi
   const config: AppConfig = { ...state.config, meters };
   setState({ config });
   await api.setConfig(config).catch(() => {});
+  if (config.compact) await applyWindowSize();
+}
+
+async function copyRaw(): Promise<void> {
+  const raw = state.usage?.rawJson;
+  if (!raw) return;
+  try {
+    await navigator.clipboard.writeText(raw);
+  } catch {
+    const ta = root.querySelector<HTMLTextAreaElement>("textarea.raw");
+    ta?.select();
+    document.execCommand("copy");
+  }
 }
 
 async function addCustom(): Promise<void> {
@@ -264,7 +281,14 @@ function onClick(e: MouseEvent): void {
     case "remove-custom":
       void removeCustom(Number(el.getAttribute("data-index")));
       break;
+    case "copy-raw":
+      void copyRaw();
+      break;
   }
+}
+
+function meterKind(value: string | null): keyof MeterDisplay {
+  return value === "ring" || value === "mini" ? value : "bar";
 }
 
 // Start a window drag from anywhere except interactive controls, so the whole
@@ -295,7 +319,7 @@ function onChange(e: Event): void {
     case "set-meter":
       void setMeter(
         el.getAttribute("data-meter") ?? "",
-        el.getAttribute("data-kind") === "ring" ? "ring" : "bar",
+        meterKind(el.getAttribute("data-kind")),
         (el as HTMLInputElement).checked,
       );
       break;
