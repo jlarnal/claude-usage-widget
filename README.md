@@ -25,8 +25,8 @@ Prefer to build it yourself? See [Build](#build) below.
   sessions, plus any new meter the server adds) as compact bars when present.
 - **Per-meter display choice** — in settings, each meter can be shown as a
   ring, a bar, both, or hidden, and included in the minimized view.
-- **Credit allowances** such as the cloud-sessions credit, with used / limit
-  and remaining amounts.
+- **Credit allowances** such as the cloud-sessions credit, consumed fraction
+  `(limit - remaining) / limit`, with used / limit and remaining amounts.
 - **Diagnostics** — settings can show or copy the raw usage response, handy
   when a new meter appears that the widget does not label yet.
 - **Local token history** — a stacked daily chart from `stats-cache.json`.

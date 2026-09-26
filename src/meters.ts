@@ -8,9 +8,9 @@ export interface Meter {
   /** Stable key used in `config.meters`. */
   id: string;
   title: string;
-  /** The value a gauge draws: percent used for windows, percent left for credits. */
+  /** The value a gauge draws: percent consumed. */
   percent: number;
-  /** Percent used, which drives the colour; equals `percent` except for credits. */
+  /** Percent that drives the colour; currently always equal to `percent`. */
   colorPercent: number;
   resetsAt: string | null;
   /** Per-model / per-surface weekly window (Opus, Sonnet, Fable, cloud sessions…). */
@@ -117,16 +117,14 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
     const limit = b.limit_dollars ?? 0;
     const used = b.used_dollars ?? 0;
     const remaining = b.remaining_dollars ?? Math.max(0, limit - used);
-    // Fractions come from the dollar amounts: used / limit and remaining / limit.
+    // The consumed fraction is (limit - remaining) / limit, so a credit reads
+    // like every other meter: the gauge fills as the credit is spent.
     const clamp = (pct: number): number => Math.max(0, Math.min(100, pct));
-    const usedPct = limit > 0 ? clamp((used / limit) * 100) : clamp(b.utilization);
-    const remainingPct = limit > 0 ? clamp((remaining / limit) * 100) : 100 - usedPct;
-    // A credit is a fuel gauge: it is drawn as what is left and drains as it
-    // is spent, while its colour follows how much has been used.
+    const usedPct = limit > 0 ? clamp(((limit - remaining) / limit) * 100) : clamp(b.utilization);
     out.push({
       id,
       title,
-      percent: remainingPct,
+      percent: usedPct,
       colorPercent: usedPct,
       resetsAt: b.resets_at,
       scoped: true,
