@@ -3,7 +3,10 @@
 //! `GET https://api.anthropic.com/api/oauth/usage` (OAuth bearer) returns the
 //! same rolling-window utilization that Claude Code's `/usage` shows.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{credentials::OauthCredentials, CoreError};
 
@@ -79,7 +82,50 @@ pub struct LimitRow {
     pub is_active: bool,
 }
 
-/// Raw response from the usage endpoint. Unknown/extra fields are ignored.
+/// A dollar-denominated allowance the endpoint reports under a codename
+/// (for example the cloud-sessions credit). Recognised by its `limit_dollars`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CreditBucket {
+    /// The top-level key it arrived under.
+    pub key: String,
+    #[serde(default)]
+    pub utilization: f64,
+    #[serde(default)]
+    pub resets_at: Option<String>,
+    #[serde(default)]
+    pub limit_dollars: Option<f64>,
+    #[serde(default)]
+    pub used_dollars: Option<f64>,
+    #[serde(default)]
+    pub remaining_dollars: Option<f64>,
+}
+
+/// Pick the credit buckets out of the top-level fields this widget does not
+/// model by name: any object with a numeric `limit_dollars`.
+pub fn credit_buckets(other: &BTreeMap<String, Value>) -> Vec<CreditBucket> {
+    other
+        .iter()
+        .filter_map(|(key, value)| {
+            let obj = value.as_object()?;
+            let limit = obj.get("limit_dollars")?.as_f64()?;
+            let num = |name: &str| obj.get(name).and_then(Value::as_f64);
+            Some(CreditBucket {
+                key: key.clone(),
+                utilization: num("utilization").unwrap_or(0.0),
+                resets_at: obj
+                    .get("resets_at")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                limit_dollars: Some(limit),
+                used_dollars: num("used_dollars"),
+                remaining_dollars: num("remaining_dollars"),
+            })
+        })
+        .collect()
+}
+
+/// Raw response from the usage endpoint. Fields not modelled by name land in
+/// `other` so codenamed buckets can still be surfaced.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RawUsage {
     #[serde(default)]
@@ -94,6 +140,8 @@ pub struct RawUsage {
     pub extra_usage: Option<ExtraUsage>,
     #[serde(default)]
     pub limits: Option<Vec<LimitRow>>,
+    #[serde(flatten)]
+    pub other: BTreeMap<String, Value>,
     /// The response body as received, for the diagnostics panel. Contains no token.
     #[serde(skip)]
     pub raw_json: String,
@@ -113,6 +161,7 @@ pub struct UsageSnapshot {
     pub seven_day_sonnet: Option<UsageWindow>,
     pub extra_usage: Option<ExtraUsage>,
     pub limits: Option<Vec<LimitRow>>,
+    pub credits: Vec<CreditBucket>,
     pub raw_json: String,
     pub fetched_at_ms: i64,
 }
@@ -217,6 +266,7 @@ pub async fn fetch_usage_snapshot(
         seven_day_sonnet: raw.seven_day_sonnet,
         extra_usage: raw.extra_usage,
         limits: raw.limits,
+        credits: credit_buckets(&raw.other),
         raw_json: raw.raw_json,
         fetched_at_ms: now_ms,
     })
@@ -302,6 +352,30 @@ mod tests {
             "Cloud sessions"
         );
         assert!(cloud.scope.as_ref().unwrap().model.is_none());
+    }
+
+    #[test]
+    fn detects_codenamed_credit_buckets() {
+        let raw = r#"{
+            "five_hour": {"utilization": 30.0, "limit_dollars": null, "used_dollars": null},
+            "tangelo": null,
+            "iguana_necktie": {"utilization": 20.6, "resets_at": "2026-11-05T07:59:00+00:00",
+                               "limit_dollars": 250, "used_dollars": 51.5, "remaining_dollars": 198.5, "locked_reason": null},
+            "nimbus_quill": {"utilization": 0.0, "resets_at": null, "limit_dollars": null},
+            "spend": {"percent": 99, "limit": {"amount_minor": 2400}},
+            "member_dashboard_available": false
+        }"#;
+        let u = parse_usage(raw).unwrap();
+        let credits = credit_buckets(&u.other);
+        assert_eq!(credits.len(), 1);
+        let c = &credits[0];
+        assert_eq!(c.key, "iguana_necktie");
+        assert_eq!(c.utilization, 20.6);
+        assert_eq!(c.limit_dollars, Some(250.0));
+        assert_eq!(c.used_dollars, Some(51.5));
+        assert_eq!(c.remaining_dollars, Some(198.5));
+        assert_eq!(c.resets_at.as_deref(), Some("2026-11-05T07:59:00+00:00"));
+        assert!(!u.other.contains_key("five_hour"));
     }
 
     #[test]

@@ -33,6 +33,16 @@ export interface LimitRow {
   is_active: boolean;
 }
 
+/** A dollar-denominated allowance reported under a codename (e.g. cloud sessions). */
+export interface CreditBucket {
+  key: string;
+  utilization: number;
+  resets_at: string | null;
+  limit_dollars: number | null;
+  used_dollars: number | null;
+  remaining_dollars: number | null;
+}
+
 export interface UsageSnapshot {
   plan: string;
   subscriptionType: string | null;
@@ -43,6 +53,7 @@ export interface UsageSnapshot {
   sevenDaySonnet: UsageWindow | null;
   extraUsage: ExtraUsage | null;
   limits: LimitRow[] | null;
+  credits: CreditBucket[];
   /** The usage response body as received (no token), for diagnostics. */
   rawJson: string;
   fetchedAtMs: number;

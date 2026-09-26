@@ -232,6 +232,11 @@ body {
   color: var(--text);
 }
 
+.credit-sub {
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
 /* ---- history chart ---- */
 .chart {
   margin-top: 2px;

@@ -139,11 +139,33 @@ function renderUsage(
 
   const modelBlock = bars.length
     ? `<div class="models">${bars
-        .map((m) => miniBar(escapeHtml(m.title), m.percent))
+        .map((m) => (m.credit ? creditBar(m) : miniBar(escapeHtml(m.title), m.percent)))
         .join("")}</div>`
     : "";
 
   return `${gauges}${modelBlock}${extraUsageBlock(u.extraUsage)}${historyChart(stats)}`;
+}
+
+/** A credit allowance as a bar with its used / limit and remaining amounts. */
+function creditBar(m: Meter): string {
+  const c = m.credit!;
+  const amount = `${fmtUsd(c.used)} / ${fmtUsd(c.limit)}`;
+  const pct = Math.max(0, Math.min(100, m.percent));
+  return `
+  <div class="extra credit">
+    <div class="extra-head"><span>${escapeHtml(m.title)}</span><span class="extra-amt" title="${escapeHtml(
+      amount,
+    )}">${fmtUsd(c.remaining)} left</span></div>
+    <div class="mini-track"><div class="mini-fill" style="width:${pct}%;background:${utilColor(pct)}"></div></div>
+    <div class="credit-sub">${escapeHtml(amount)} used${
+      m.resetsAt ? ` · resets ${escapeHtml(shortDate(m.resetsAt))}` : ""
+    }</div>
+  </div>`;
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function extraUsageBlock(extra: ExtraUsage | null): string {

@@ -16,7 +16,7 @@ pub mod wsl;
 pub use credentials::{parse_credentials, OauthCredentials};
 pub use sources::{Source, SourceKind};
 pub use stats::{parse_stats, StatsHistory};
-pub use usage::{fetch_usage_snapshot, plan_label, LimitRow, UsageSnapshot, UsageWindow};
+pub use usage::{fetch_usage_snapshot, plan_label, CreditBucket, LimitRow, UsageSnapshot, UsageWindow};
 
 use std::fmt;
 

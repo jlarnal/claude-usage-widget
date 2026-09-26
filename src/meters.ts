@@ -1,7 +1,7 @@
 // Enumerates the usage meters in a snapshot and resolves how each one is drawn.
 // Pure: no side effects, shared by the renderer, the settings panel and main.ts.
 
-import type { AppConfig, LimitRow, MeterDisplay, UsageSnapshot } from "./types";
+import type { AppConfig, CreditBucket, LimitRow, MeterDisplay, UsageSnapshot } from "./types";
 
 /** One usage window the expanded layout can draw as a ring and/or a bar. */
 export interface Meter {
@@ -12,6 +12,17 @@ export interface Meter {
   resetsAt: string | null;
   /** Per-model / per-surface weekly window (Opus, Sonnet, Fable, cloud sessions…). */
   scoped: boolean;
+  /** Dollar figures for credit allowances; absent for percentage-only windows. */
+  credit?: { used: number; limit: number; remaining: number };
+}
+
+/** Labels for the codenamed credit buckets the endpoint reports. */
+const CREDIT_LABELS: Record<string, string> = {
+  iguana_necktie: "Cloud sessions",
+};
+
+function creditTitle(b: CreditBucket): string {
+  return CREDIT_LABELS[b.key] ?? humanizeKind(b.key);
 }
 
 /** Defaults: the two headline windows are rings (and minimized), scoped windows are bars. */
@@ -92,6 +103,22 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
       // pool): shown under its kind so nothing the server reports is hidden.
       pushScoped(humanizeKind(row.kind), row.percent, row.resets_at);
     }
+  }
+  for (const b of u.credits ?? []) {
+    const title = creditTitle(b);
+    const id = title.toLowerCase();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const limit = b.limit_dollars ?? 0;
+    const used = b.used_dollars ?? 0;
+    out.push({
+      id,
+      title,
+      percent: b.utilization,
+      resetsAt: b.resets_at,
+      scoped: true,
+      credit: { used, limit, remaining: b.remaining_dollars ?? Math.max(0, limit - used) },
+    });
   }
   return out;
 }

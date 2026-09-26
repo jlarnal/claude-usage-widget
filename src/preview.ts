@@ -30,7 +30,16 @@ const usage: UsageSnapshot = {
     { kind: "weekly_scoped", group: "weekly", percent: 8, resets_at: null, scope: { model: { display_name: "Opus" }, surface: null }, severity: "normal", is_active: false },
     { kind: "weekly_scoped", group: "weekly", percent: 22, resets_at: null, scope: { model: { display_name: "Sonnet" }, surface: null }, severity: "normal", is_active: false },
     { kind: "weekly_scoped", group: "weekly", percent: 61, resets_at: null, scope: { model: { display_name: "Fable" }, surface: null }, severity: "warning", is_active: false },
-    { kind: "weekly_scoped", group: "weekly", percent: 5, resets_at: null, scope: { model: null, surface: { display_name: "Cloud sessions" } }, severity: "normal", is_active: false },
+  ],
+  credits: [
+    {
+      key: "iguana_necktie",
+      utilization: 20.6,
+      resets_at: new Date(Date.now() + 40 * 24 * HOUR).toISOString(),
+      limit_dollars: 250,
+      used_dollars: 51.5,
+      remaining_dollars: 198.5,
+    },
   ],
   rawJson: "",
   fetchedAtMs: Date.now(),
@@ -42,6 +51,7 @@ usage.rawJson = JSON.stringify({
   seven_day_sonnet: usage.sevenDaySonnet,
   extra_usage: usage.extraUsage,
   limits: usage.limits,
+  iguana_necktie: usage.credits[0],
 });
 
 const days: DailyTokens[] = [
