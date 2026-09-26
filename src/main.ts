@@ -70,9 +70,10 @@ async function refreshUsage(): Promise<void> {
   try {
     const usage = await api.fetchUsage(src.credentialsPath);
     backoffLevel = 0; // recovered — resume normal cadence
+    const before = miniMeterCount();
     setState({ usage, status: { kind: "ok" }, lastUpdatedMs: Date.now() });
-    // New meters can appear with a fetch; keep the minimized window fitting its content.
-    if (state.config.compact) await applyWindowSize();
+    // New meters can appear with a fetch; grow the minimized window when they do.
+    if (state.config.compact && miniMeterCount() !== before) await applyWindowSize();
   } catch (e) {
     // Any failure backs the poller off so we don't hammer the endpoint.
     backoffLevel = Math.min(backoffLevel + 1, MAX_BACKOFF_LEVEL);
@@ -197,19 +198,30 @@ function measureCompact(): { w: number; h: number } {
   return { w: est.w, h: Math.max(est.h, Math.ceil(h)) };
 }
 
+const WINDOW_LOG_MAX = 6;
+
+function logWindow(line: string): void {
+  const stamp = new Date().toTimeString().slice(0, 8);
+  state = { ...state, windowLog: [`${stamp} ${line}`, ...state.windowLog].slice(0, WINDOW_LOG_MAX) };
+  if (state.settingsOpen) render();
+}
+
 async function applyWindowSize(): Promise<void> {
   const s = state.config.compact ? measureCompact() : SIZE_EXPANDED;
-  let windowNote: string;
+  const mode = state.config.compact ? `mini(${root.querySelectorAll(".cbar, .cring").length})` : "expanded";
   try {
     await api.setWindowSize(s.w, s.h);
     const got = await api.windowSize();
-    const rows = root.querySelectorAll(".cbar, .cring").length;
-    windowNote = `Window: wanted ${s.w}×${s.h}, got ${got.w}×${got.h} (scale ${got.scale}, ${rows} mini meters, compact=${state.config.compact})`;
+    logWindow(`${mode}: wanted ${s.w}×${s.h}, got ${got.w}×${got.h} @${got.scale}`);
+    // Report the settled size too, once the asynchronous apply has had time to land.
+    window.setTimeout(() => {
+      void api.windowSize().then((late) => {
+        if (late.w !== got.w || late.h !== got.h) logWindow(`${mode}: settled at ${late.w}×${late.h}`);
+      });
+    }, 1500);
   } catch (e) {
-    windowNote = `Window resize failed: ${errText(e)}`;
+    logWindow(`${mode}: resize failed: ${errText(e)}`);
   }
-  state = { ...state, windowNote };
-  if (state.settingsOpen) render();
 }
 
 async function toggleCompact(): Promise<void> {
@@ -240,7 +252,7 @@ async function setMeter(id: string, kind: keyof MeterDisplay, value: boolean): P
 async function copyRaw(): Promise<void> {
   const raw = state.usage?.rawJson;
   if (!raw) return;
-  const text = `${state.windowNote}\n${raw}`;
+  const text = `${state.windowLog.join("\n")}\n${raw}`;
   try {
     await navigator.clipboard.writeText(text);
   } catch {

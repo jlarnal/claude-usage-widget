@@ -311,9 +311,11 @@ function diagnostics(state: UiState): string {
   return `
       <details class="diag">
         <summary>Diagnostics</summary>
-        <div class="hint">${escapeHtml(state.windowNote || "Window: not resized yet")} · v${escapeHtml(
-          APP_VERSION,
-        )}</div>
+        <div class="hint">v${escapeHtml(APP_VERSION)}<br/>${
+          state.windowLog.length
+            ? state.windowLog.map((l) => escapeHtml(l)).join("<br/>")
+            : "Window: not resized yet"
+        }</div>
         <button class="btn" data-action="copy-raw" ${raw ? "" : "disabled"}>Copy to clipboard</button>
         <textarea class="raw" readonly data-no-drag spellcheck="false">${escapeHtml(
           pretty || "No response yet.",
