@@ -116,17 +116,21 @@ export function listMeters(u: UsageSnapshot | null): Meter[] {
     seen.add(id);
     const limit = b.limit_dollars ?? 0;
     const used = b.used_dollars ?? 0;
-    const usedPct = Math.max(0, Math.min(100, b.utilization));
+    const remaining = b.remaining_dollars ?? Math.max(0, limit - used);
+    // Fractions come from the dollar amounts: used / limit and remaining / limit.
+    const clamp = (pct: number): number => Math.max(0, Math.min(100, pct));
+    const usedPct = limit > 0 ? clamp((used / limit) * 100) : clamp(b.utilization);
+    const remainingPct = limit > 0 ? clamp((remaining / limit) * 100) : 100 - usedPct;
     // A credit is a fuel gauge: it is drawn as what is left and drains as it
     // is spent, while its colour follows how much has been used.
     out.push({
       id,
       title,
-      percent: 100 - usedPct,
+      percent: remainingPct,
       colorPercent: usedPct,
       resetsAt: b.resets_at,
       scoped: true,
-      credit: { used, limit, remaining: b.remaining_dollars ?? Math.max(0, limit - used) },
+      credit: { used, limit, remaining },
     });
   }
   return out;
